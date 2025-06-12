@@ -1,56 +1,93 @@
 package com.example.tems.Tems.controller;
 
-import java.util.Map;
-
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/")
-public class ussdcontroller {
+// @RequestMapping("/api")
+public class UssdController {
+
+    // @PostMapping(
+    //     value = "/ussd",
+    //     consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
+    //     produces = MediaType.TEXT_PLAIN_VALUE
+    // )
+    // public String handleUssdRequest(
+    //     @RequestParam String sessionId,
+    //     @RequestParam String serviceCode,
+    //     @RequestParam String phoneNumber,
+    //     @RequestParam(required = false) String text,
+    //     @RequestParam String networkCode) {
+
+            
+
+    //     // Log raw request
+    //     System.out.printf(
+    //         "USSD Request Received:\n" +
+    //         "Session ID: %s\n" +
+    //         "Service Code: %s\n" +
+    //         "Phone: %s\n" +
+    //         "Text: %s\n" +
+    //         "Network: %s\n",
+    //         sessionId, serviceCode, phoneNumber, text, networkCode
+    //     );
+
+    //     // Initial menu
+    //     if (text == null || text.isEmpty()) {
+    //         return "CON Welcome to NIGERIAN TEMS SERVICE\n1. Search Organization\n2. Exit";
+    //     }
+
+    //     // Handle user input
+    //     String[] parts = text.split("\\*");
+    //     String lastInput = parts[parts.length - 1];
+
+    //     switch (lastInput) {
+    //         case "1":
+    //             if (parts.length == 1) { // First level selection
+    //                 return "CON Enter organization name:";
+    //             } else { // Organization name entered
+    //                 String orgName = lastInput;
+    //                 return "END Searching for: " + orgName;
+    //             }
+                
+    //         case "2":
+    //             return "END Thank you for using TEMS";
+                
+    //         default:
+    //             return "END Invalid option selected";
+    //     }
+    // }
     @PostMapping(
-        value = "/ussd",
-        consumes = "application/x-www-form-urlencoded",
-        produces = "text/plain"
+        value = "/ussd",  // <- Direct root path
+        consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
+        produces = MediaType.TEXT_PLAIN_VALUE
     )
-    public String handleUssdRequest(@RequestParam Map<String, String> requestParams) {
-        // Add your logic here
-        String sessionId = requestParams.get("sessionId");
-        String serviceCode = requestParams.get("serviceCode");
-        String phoneNumber = requestParams.get("phoneNumber");
-        String text = requestParams.get("text");
-        String networkCode = requestParams.get("networkCode");
-
+    public String testEndpoint(@RequestParam(required = false) String text) {
+        System.out.println("RAW INPUT: " + text);
         if (text == null || text.isEmpty()) {
-            return "CON Welcome to NIGERIAN TEMS SERVICE\n" + 
-                    "To get info on Nigerian organizations, enter the name or initials.\n" + 
-                    "1. Search Organisation\n" +
-                    "2. Exit";
+            return "CON Welcome to NIGERIAN TEMS SERVICE\n1. Search Organization\n2. Exit";
         }
-        String[] textParts = text.split("\\*"); // this splits the text input by the user into parts using '*' as a delimiter
-        String response = textParts[0]; // the first part of the text input is the response
-        switch (response) {
+        String[] parts = text.split("\\*");
+        String lastInput = parts[parts.length - 1];
+        switch (lastInput) {
             case "1":
-                return "Welcome to NIGERIAN TEMS SERVICE\n" + 
-                       "To search for an organization, enter the name or initials.\n";
-
+                if (parts.length == 1) { // First level selection
+                    return "CON Enter organization name:";
+                } else { // Organization name entered
+                    String orgName = lastInput;
+                    return "END Searching for: " + orgName;
+                }
+                
             case "2":
-                return "END Thank you for using NIGERIAN TEMS SERVICE. Goodbye!";
+                return "END Thank you for using TEMS";
+                
             default:
-                break;
+                return "END Invalid option selected";
         }
-        if (textParts.length > 1) {
-            String searchQuery = textParts[1].trim(); // this gets the second part of the text input which is the search query
-            // Here you would typically call a service to search for the organization based on the searchQuery
-            // For now, we will just return a dummy response
-            return "CON You searched for: " + searchQuery + "\n" +
-                   "1. View Details\n" +
-                   "2. Back to Main Menu";
-        }
-        return "END Invalid input. Please try again.";
-    }
 
+        
+    }
 }
