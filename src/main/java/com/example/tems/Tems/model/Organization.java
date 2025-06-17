@@ -5,8 +5,10 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
 @Entity
+@Table(name = "organization")
 public class Organization {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -17,10 +19,12 @@ public class Organization {
     @Column(length = 1000)
     public String contactAddress;
 
+    public String contactTelephone;
+
     @Column(length = 2000)
     public String description;
 
-    public String contactTelephone;
+   
 
     public Organization() {}
 
