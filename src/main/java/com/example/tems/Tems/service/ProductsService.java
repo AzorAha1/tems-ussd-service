@@ -38,7 +38,9 @@ public class ProductsService {
             "type", "SUBSCRIPTION",
             "subscription_type", "ONETIME_AND_RECURRING",
             "amount", 5000,
-            "webhook_url", "https://f087-105-112-206-115.ngrok-free.app/api/v1/tems/webhook/aggregator"
+            "webhook", "https://f087-105-112-206-115.ngrok-free.app/api/v1/tems/webhook/aggregator",
+            "validity_days", 0,
+            "status", "ACTIVE"
         );
         
         HttpHeaders headers = new HttpHeaders();
@@ -51,7 +53,7 @@ public class ProductsService {
             System.out.println("🔑 Using API key: " + aggregatorApiKey.substring(0, 5) + "...");
             
             ResponseEntity<Map> response = restTemplate.postForEntity(
-                hosturl + "/product",
+                hosturl + "/product/create",
                 new HttpEntity<Map<String, Object>>(product, headers),
                 Map.class
             );
