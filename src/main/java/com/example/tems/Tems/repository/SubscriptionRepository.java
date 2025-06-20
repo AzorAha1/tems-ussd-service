@@ -9,5 +9,6 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     // For example, to find subscriptions by phone number or status
     Optional<Subscription> findByPhoneNumber(String phoneNumber);
     List<Subscription> findByStatus(String status);
+    List<Subscription> findByPhoneNumberAndStatus(String phoneNumber, String status);
     
 }
