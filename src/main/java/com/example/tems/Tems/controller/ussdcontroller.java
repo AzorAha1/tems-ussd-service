@@ -6,6 +6,7 @@ import com.example.tems.Tems.repository.OrganizationRepository;
 
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,8 +16,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 // @RequestMapping("/api")
 public class UssdController {
-    @Autowired
+    @Value("${aggregator.product.id}")
+    private String productID;
     private OrganizationRepository OrganizationRepository;
+    @Autowired
+    public UssdController(OrganizationRepository organizationRepository) {
+        this.OrganizationRepository = organizationRepository;
+    }
     @PostMapping(
     value = "/ussd",
     consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
