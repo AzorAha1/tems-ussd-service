@@ -1,6 +1,7 @@
 package com.example.tems.Tems.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +16,10 @@ import lombok.Data;
 @RequestMapping(value = "/api/v1/tems/webhook")
 public class AggregatorWebhookController {
 
+    @Value("${aggregator.mtn.product.id}")
+    private String mtnProductId;
+    @Value("${aggregator.airtel.product.id}")
+    private String airtelProductId;
     private final SubscriptionService subscriptionService;
 
     @Autowired
@@ -26,6 +31,11 @@ public class AggregatorWebhookController {
     public ResponseEntity<String> handleAggregatorWebhookNotification(@RequestBody AggregatorNotification notification) {
         // Log the received payload for debug
         System.out.println("Received Aggregator Notification: " + notification.getType());
+        if (!notification.getProduct().getIdentity().equals(mtnProductId) && 
+            !notification.getProduct().getIdentity().equals(airtelProductId)) {
+            System.err.println("❌ Invalid product identity: " + notification.getProduct().getIdentity());
+            return ResponseEntity.badRequest().body("Invalid product identity");
+        }
         // details object
         Details details = notification.getDetails();
         // raw phone number

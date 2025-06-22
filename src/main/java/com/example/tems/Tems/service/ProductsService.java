@@ -40,7 +40,7 @@ public class ProductsService {
             "amount", 5000,
             "webhook", "https://f087-105-112-206-115.ngrok-free.app/api/v1/tems/webhook/aggregator",
             "validity_days", 0,
-            "status", "ACTIVE"
+            "status", "LIVE"
         );
         
         HttpHeaders headers = new HttpHeaders();
@@ -53,7 +53,7 @@ public class ProductsService {
             System.out.println("🔑 Using API key: " + aggregatorApiKey.substring(0, 5) + "...");
             
             ResponseEntity<Map> response = restTemplate.postForEntity(
-                hosturl + "/product/create",
+                hosturl + "/product",
                 new HttpEntity<Map<String, Object>>(product, headers),
                 Map.class
             );
@@ -84,42 +84,26 @@ public class ProductsService {
     
     public String gethosturlbynumber(String phonenumber) {
         String cleanNumber = phonenumber.replaceAll("[^0-9]", "");
+        
+        // Keep leading zero for proper prefix detection
         if (cleanNumber.startsWith("234")) {
-            cleanNumber = cleanNumber.substring(3); // Remove country code
-        }
-        // remove leading zeros
-        if (cleanNumber.startsWith("0")) {
-            cleanNumber = cleanNumber.substring(1);
+            cleanNumber = "0" + cleanNumber.substring(3);
         }
         
         System.out.println("📱 Processing phone number: " + phonenumber + " -> " + cleanNumber);
         
-        // MTN prefixes (more accurate)
-        if (cleanNumber.startsWith("703") || cleanNumber.startsWith("706") ||
-            cleanNumber.startsWith("803") || cleanNumber.startsWith("806") || 
-            cleanNumber.startsWith("810") || cleanNumber.startsWith("813") ||
-            cleanNumber.startsWith("814") || cleanNumber.startsWith("816") ||
-            cleanNumber.startsWith("903") || cleanNumber.startsWith("906") ||
-            cleanNumber.startsWith("913") || cleanNumber.startsWith("916")) {
-            System.out.println("📡 Identified as MTN, using URL: " + aggregatorMtnUrl);
+        // MTN prefixes
+        if (cleanNumber.matches("^(0703|0706|0803|0806|0810|0813|0814|0816|0903|0906|0913|0916).*")) {
+            System.out.println("📡 Identified as MTN");
             return aggregatorMtnUrl;
         }
-        
-        // Airtel and 9mobile prefixes
-        else if (cleanNumber.startsWith("701") || cleanNumber.startsWith("705") ||
-                 cleanNumber.startsWith("708") || cleanNumber.startsWith("802") ||
-                 cleanNumber.startsWith("808") || cleanNumber.startsWith("809") ||
-                 cleanNumber.startsWith("812") || cleanNumber.startsWith("817") ||
-                 cleanNumber.startsWith("818") || cleanNumber.startsWith("901") ||
-                 cleanNumber.startsWith("902") || cleanNumber.startsWith("904") ||
-                 cleanNumber.startsWith("907") || cleanNumber.startsWith("908") ||
-                 cleanNumber.startsWith("909") || cleanNumber.startsWith("911") ||
-                 cleanNumber.startsWith("912")) {
-            System.out.println("📡 Identified as Airtel/9mobile, using URL: " + aggregatorAirtelOr9MobileUrl);
+        // 9mobile prefixes
+        else if (cleanNumber.matches("^(0809|0817|0818|0909|0908|0911).*")) {
+            System.out.println("📡 Identified as 9mobile");
             return aggregatorAirtelOr9MobileUrl;
-        } else {
-            System.out.println("❌ Unsupported phone number prefix");
-            return "Invalid phone number"; // Return an error message for unsupported numbers
         }
+        // Default to Airtel
+        System.out.println("📡 Identified as Airtel");
+        return aggregatorAirtelOr9MobileUrl;
     }
 }

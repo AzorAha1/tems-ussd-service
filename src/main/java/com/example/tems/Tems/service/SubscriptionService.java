@@ -39,11 +39,26 @@ public class SubscriptionService {
     }
     public boolean hasActiveSession(String phoneNumber) {
         // get all active subscriptions for a given phone number
-        List<Subscription> activeSubscriptions = subscriptionRepository.findByPhoneNumberAndStatus(phoneNumber, "active");
-        // check if there are any active subscriptions
-        LocalDateTime now = LocalDateTime.now();
-        return activeSubscriptions.stream()
-                .anyMatch(subscription -> subscription.getExpiresat().isAfter(now));
+        try {
+            List<Subscription> activeSubscriptions = subscriptionRepository.findByPhoneNumberAndStatus(phoneNumber, "active");
+            // Check if there are any active subscriptions
+            LocalDateTime now = LocalDateTime.now();
+            for (Subscription subscription : activeSubscriptions) {
+                if (subscription.getExpiresat().isAfter(now)) {
+                    return true; // Active session exists
+                } else {
+                    // If the subscription has expired, deactivate it
+                    subscription.setStatus("expired");
+                    subscriptionRepository.save(subscription);
+                }
+            }
+            return false; // No active session found
+            
+        } catch (Exception e) {
+            System.err.println("Error checking active session: " + e.getMessage());
+            return false; // In case of any error, assume no active session
+        }
+
 
     }
 }
