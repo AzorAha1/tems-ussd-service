@@ -37,18 +37,20 @@ public class UssdController {
     consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
     produces = MediaType.TEXT_PLAIN_VALUE
     )
-    public String handleUssdRequest(@RequestParam(required = false) String text, @RequestParam String phone) {
-        String normalizedPhoneNumber = normalizePhoneNumber(phone);
+    public String handleUssdRequest(@RequestParam(name  = "text", required = false) String inputText, @RequestParam(name = "phoneNumber") String phoneNumber) {
+        String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
         // Check if the phone number is valid
         if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
             return "END Invalid phone number provided.";
         }
-        String inputText = (text == null) ? "" : text;
+        String inputedText = (inputText == null) ? "" : inputText;
         // Split the text input by '*'
-        String[] parts = inputText.isEmpty() ? new String[0] : inputText.split("\\*");
+        String[] parts = inputedText.isEmpty() ? new String[0] : inputedText.split("\\*");
         String lastinput = parts.length > 0 ? parts[parts.length - 1] : "";
         // Check if the user has an active session
-        boolean hasActiveSession = subscriptionService.hasActiveSession(normalizedPhoneNumber);
+        // boolean hasActiveSession = subscriptionService.hasActiveSession(normalizedPhoneNumber);
+        // for testing purposes we will have hasActiveSession to be true
+        boolean hasActiveSession = true;
         // If the text is empty, show the initial menu
         if (inputText.isEmpty()) {
             return HandleinitialMenu(normalizedPhoneNumber, hasActiveSession);
@@ -60,20 +62,33 @@ public class UssdController {
         return handleServiceFlow(normalizedPhoneNumber, parts, lastinput);
     }
     //method to handle incoming phone numbers
+    // private String normalizePhoneNumber(String phoneNumber) {
+    //     if (phoneNumber == null) return "";
+        
+    //     String normalized = phoneNumber.replaceAll("[^0-9]", "");
+        
+    //     if (normalized.startsWith("234") && normalized.length() == 13) {
+    //         return "0" + normalized.substring(3);
+    //     } else if (!normalized.startsWith("0") && normalized.length() == 10) {
+    //         return "0" + normalized;
+    //     } else if (normalized.length() == 11 && normalized.startsWith("0")) {
+    //         return normalized;
+    //     }
+        
+    //     return phoneNumber; // fallback
+    // }
     private String normalizePhoneNumber(String phoneNumber) {
         if (phoneNumber == null) return "";
         
+        // Remove ALL non-digits including '+'
         String normalized = phoneNumber.replaceAll("[^0-9]", "");
         
+        // Convert +234 to 0
         if (normalized.startsWith("234") && normalized.length() == 13) {
             return "0" + normalized.substring(3);
-        } else if (!normalized.startsWith("0") && normalized.length() == 10) {
-            return "0" + normalized;
-        } else if (normalized.length() == 11 && normalized.startsWith("0")) {
-            return normalized;
         }
-        
-        return phoneNumber; // fallback
+        // Other cases remain same
+        return normalized; 
     }
     // method to search organisations
     private String handleOrganizationSearch(String Searchterm) {
