@@ -60,7 +60,7 @@ public class UssdController {
             // thisis organisation search
             case 2: return HandleLevel2(parts[1], normalizedPhoneNumber, parts);
             case 3: return HandleLevel3(parts[2], normalizedPhoneNumber, parts);
-            // case 4: return HandleLevel4(parts[3], normalizedPhoneNumber, parts);
+            // case 4: return handleMore(parts[3], normalizedPhoneNumber, parts);
             default: return "END Session expired";
         }
 
@@ -140,7 +140,6 @@ public class UssdController {
         }
         
     }
-
     private String normalizePhoneNumber(String phoneNumber) {
         if (phoneNumber == null) return "";
         
