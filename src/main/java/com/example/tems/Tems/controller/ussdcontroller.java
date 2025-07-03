@@ -46,20 +46,33 @@ public class UssdController {
         String inputedText = (inputText == null) ? "" : inputText;
         // Split the text input by '*'
         String[] parts = inputedText.isEmpty() ? new String[0] : inputedText.split("\\*");
-        String lastinput = parts.length > 0 ? parts[parts.length - 1] : "";
+        int step = parts.length;
         // Check if the user has an active session
         // boolean hasActiveSession = subscriptionService.hasActiveSession(normalizedPhoneNumber);
         // for testing purposes we will have hasActiveSession to be true
         boolean hasActiveSession = true;
         // If the text is empty, show the initial menu
-        if (inputText.isEmpty()) {
-            return HandleinitialMenu(normalizedPhoneNumber, hasActiveSession);
+        // using switch case method 
+        switch(step) {
+            case 0: return HandleinitialMenu(normalizedPhoneNumber, hasActiveSession);
+            // this is when to search
+            case 1: return HandleLevel1(parts[0], normalizedPhoneNumber, parts);
+            // thisis organisation search
+            case 2: return HandleLevel2(parts[1], normalizedPhoneNumber, parts);
+            case 3: return HandleLevel3(parts[2], normalizedPhoneNumber, parts);
+            // case 4: return HandleLevel4(parts[3], normalizedPhoneNumber, parts);
+            default: return "END Session expired";
         }
-        // If the user has an active session, handle the service flow
-        if (!hasActiveSession) {
-            return handlePaymentFlow(normalizedPhoneNumber, parts, lastinput);
-        }
-        return handleServiceFlow(normalizedPhoneNumber, parts, lastinput);
+
+        
+        // if (inputText.isEmpty()) {f
+        //     return HandleinitialMenu(normalizedPhoneNumber, hasActiveSession);
+        // }
+        // // If the user has an active session, handle the service flow
+        // if (!hasActiveSession) {
+        //     return handlePaymentFlow(normalizedPhoneNumber, parts, lastinput);
+        // }
+        // return handleServiceFlow(normalizedPhoneNumber, parts, lastinput);
     }
     //method to handle incoming phone numbers
     // private String normalizePhoneNumber(String phoneNumber) {
@@ -77,6 +90,57 @@ public class UssdController {
         
     //     return phoneNumber; // fallback
     // }
+    // first step is putting in text
+    private String HandleLevel1(String text, String phone, String[] parts) {
+        switch(text) {
+            case "1":
+                return "CON Enter organisation name:";
+            case "2": return "END Goodbye!";
+            default:
+                return "End Invalid Choice";
+        }
+    }
+    // second step you search for organisation
+    private String HandleLevel2(String text, String phone, String[] parts) {
+        List <Organization> results = handleOrganizationSearch(text);
+        if (results.isEmpty()) {
+            return "END No matches for: " + text;
+        }
+        return showorgmenu(results.get(0));
+    }
+    // show org menu
+    private String showorgmenu(Organization orgofchoice){
+        return "CON " + orgofchoice.getName() + "\n" +
+               "1. Contact Info\n" +
+               "2. Address\n" +
+               "3. Description\n" + 
+               "4. More"; 
+    }
+    // third step is to show org details
+    private String HandleLevel3(String choice, String phone, String[] parts) {
+        String searchTerm = parts[1];
+        // retrieve the organization based on the search term
+        List<Organization> results = handleOrganizationSearch(searchTerm);
+        if (results.isEmpty()) {
+            return "END No matches for: " + searchTerm;
+        }
+        Organization org = results.get(0);
+        switch (choice) {
+            case "1":
+                return "END Contact Info:\n" +
+                       "Phone: " + org.getContactTelephone() + "\n";
+            case "2":
+                return "END Address:\n" + org.getContactAddress();
+            case "3":
+                return "END Description:\n" + org.getDescription();
+            case "4":
+                return "END More information is not available at the moment.";
+            default:
+                return "END Invalid choice. Please try again.";
+        }
+        
+    }
+
     private String normalizePhoneNumber(String phoneNumber) {
         if (phoneNumber == null) return "";
         
@@ -91,16 +155,14 @@ public class UssdController {
         return normalized; 
     }
     // method to search organisations
-    private String handleOrganizationSearch(String Searchterm) {
+    private List<Organization> handleOrganizationSearch(String Searchterm) {
         List <Organization> organizations = OrganizationRepository.findByNameContainingIgnoreCase(Searchterm);
-        if (organizations.isEmpty()) {
-            return "No organizations found for the search term: " + Searchterm;
-        }
-        Organization org = organizations.get(0); // Get the first organization
-        return "END Organization Found:\nName: " + org.getName() +
-                   "\nAddress: " + org.getContactAddress() +
-                   "\nDescription: " + org.getDescription() +
-                   "\nTelephone: " + org.getContactTelephone();
+         // Get the first organization
+        return organizations;
+        // return "END Organization Found:\nName: " + org.getName() +
+        //            "\nAddress: " + org.getContactAddress() +
+        //            "\nDescription: " + org.getDescription() +
+        //            "\nTelephone: " + org.getContactTelephone();
     }
     //method to handle initial menu
     private String HandleinitialMenu(String phoneNumber, boolean hasActiveSession) {
@@ -133,19 +195,19 @@ public class UssdController {
         }
     }
     // method to handle service flow if user is subscribed
-    private String handleServiceFlow(String phoneNumber, String[] parts, String lastinput) {
-        // user just entered 1
-        if (parts.length == 1 && lastinput.equals("1")) {
-            return "CON Enter Organization Name to Search:";
-       // Example: text = "1*Shell" → parts.length == 2 → lastInput = "Shell"
-        } else if (parts.length == 2 && lastinput != null && !lastinput.isEmpty()) {
-            return handleOrganizationSearch(lastinput);
-        // user just entered 2
+    // private String handleServiceFlow(String phoneNumber, String[] parts, String lastinput) {
+    //     // user just entered 1
+    //     if (parts.length == 1 && lastinput.equals("1")) {
+    //         return "CON Enter Organization Name to Search:";
+    //    // Example: text = "1*Shell" → parts.length == 2 → lastInput = "Shell"
+    //     } else if (parts.length == 2 && lastinput != null && !lastinput.isEmpty()) {
+    //         return handleOrganizationSearch(lastinput);
+    //     // user just entered 2
         
-        } else if (lastinput.equals("2")) {
-            return "END Thank you for using NIGERIAN TEMS SERVICE\"";
-        } else {
-            return "END Invalid input. Please try again.";
-        }
-    }
+    //     } else if (lastinput.equals("2")) {
+    //         return "END Thank you for using NIGERIAN TEMS SERVICE\"";
+    //     } else {
+    //         return "END Invalid input. Please try again.";
+    //     }
+    // }
 }
