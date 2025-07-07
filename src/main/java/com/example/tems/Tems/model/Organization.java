@@ -12,56 +12,77 @@ import jakarta.persistence.Table;
 public class Organization {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    public Long id;
+    private Long id;
 
-    public String name;
+    private String name;
+    
+    private String initials;
 
-    @Column(length = 1000)
-    public String contactAddress;
+    @Column(name = "contact_address", length = 1000)
+    private String contactAddress;
 
-    public String contactTelephone;
+    @Column(name = "contact_telephone")
+    private String contactTelephone;
 
     @Column(length = 2000)
-    public String description;
-
-   
+    private String description;
 
     public Organization() {}
 
-    public Organization(String name, String contactAddress, String description, String contactTelephone) {
+    public Organization(String name, String initials, String contactAddress, String contactTelephone, String description) {
         this.name = name;
+        this.initials = initials;
         this.contactAddress = contactAddress;
-        this.description = description;
         this.contactTelephone = contactTelephone;
+        this.description = description;
     }
+
+    // Getters and Setters
     public Long getId() {
         return id;
     }
+
     public void setId(Long id) {
         this.id = id;
     }
+
     public String getName() {
         return name;
     }
+
     public void setName(String name) {
         this.name = name;
     }
+
+    public String getInitials() {
+        return initials;
+    }
+
+    public void setInitials(String initials) {
+        this.initials = initials;
+    }
+
     public String getContactAddress() {
         return contactAddress;
     }
+
     public void setContactAddress(String contactAddress) {
         this.contactAddress = contactAddress;
     }
-    public String getDescription() {
-        return description;
-    }
-    public void setDescription(String description) {
-        this.description = description;
-    }
+
     public String getContactTelephone() {
         return contactTelephone;
     }
+
     public void setContactTelephone(String contactTelephone) {
         this.contactTelephone = contactTelephone;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }
