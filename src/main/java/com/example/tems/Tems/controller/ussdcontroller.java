@@ -1,6 +1,7 @@
 package com.example.tems.Tems.controller;
 
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -57,17 +58,44 @@ public class UssdController {
         int step = parts.length;
         
         boolean hasActiveSession = true;
-        
         switch(step) {
             case 0: 
                 clearSession(normalizedPhoneNumber); // Clear session only when starting fresh
                 return HandleinitialMenu(normalizedPhoneNumber, hasActiveSession);
-            case 1: return HandleLevel1(parts[0], normalizedPhoneNumber, parts);
-            case 2: return HandleLevel2(parts[1], normalizedPhoneNumber, parts);
-            case 3: return HandleLevel3(parts[2], normalizedPhoneNumber, parts);
-            case 4: return handleLevel4(parts[3], normalizedPhoneNumber, parts);
-            case 5: return handlelevel5(parts[4], normalizedPhoneNumber, parts);
-            default: return "END Session expired";
+            case 1: 
+                return HandleLevel1(parts[0], normalizedPhoneNumber, parts);
+            case 2: 
+                return HandleLevel2(parts[1], normalizedPhoneNumber, parts);
+            case 3: 
+                Boolean isMoreResultsFlowObj3 = (Boolean) retrieveFromSession(normalizedPhoneNumber, "isMoreResultsFlow");
+                boolean isMoreResultsFlow3 = Boolean.TRUE.equals(isMoreResultsFlowObj3);
+                System.out.println("Case 3 - isMoreResultsFlow: " + isMoreResultsFlow3 + ", input: " + parts[2]);
+                
+                if (isMoreResultsFlow3) {
+                    // If we are in more results flow, we should not clear the session
+                    // Just handle the selection without clearing
+                    System.out.println("Handling more results flow selection");
+                    saveToSession(normalizedPhoneNumber, "isMoreResultsFlow", false);
+                    return HandleLevel3(parts[2], normalizedPhoneNumber, parts);
+                }
+                return HandleLevel3(parts[2], normalizedPhoneNumber, parts);
+            case 4: 
+                // Check if this is actually a more results flow selection
+                Boolean isMoreResultsFlowObj4 = (Boolean) retrieveFromSession(normalizedPhoneNumber, "isMoreResultsFlow");
+                boolean isMoreResultsFlow4 = Boolean.TRUE.equals(isMoreResultsFlowObj4);
+                System.out.println("Case 4 - isMoreResultsFlow: " + isMoreResultsFlow4 + ", input: " + parts[3]);
+                
+                if (isMoreResultsFlow4) {
+                    // This is actually an organization selection from more results, not level 4
+                    System.out.println("Handling organization selection from more results at step 4");
+                    saveToSession(normalizedPhoneNumber, "isMoreResultsFlow", false);
+                    return HandleLevel3(parts[3], normalizedPhoneNumber, parts);
+                }
+                return handleLevel4(parts[3], normalizedPhoneNumber, parts);
+            case 5: 
+                return handlelevel5(parts[4], normalizedPhoneNumber, parts);
+            default: 
+                return "END Session expired";
         }
     }
 
@@ -85,6 +113,7 @@ public class UssdController {
     private String HandleLevel2(String text, String phone, String[] parts) {
         Pageable firstpage = PageRequest.of(0, 5);
         Page<Organization> results = handleOrganizationSearch(text, firstpage);
+        saveToSession(phone, "isMoreResultsFlow", false); // Reset more results flow
         
         if (results.isEmpty()) {
             return "END No matches for: " + text;
@@ -102,11 +131,13 @@ public class UssdController {
         saveToSession(phone, "org_ids", org_ids);
         
         if (results.getContent().size() == 1) {
+            // single result found, save it to session and show org menu
             Organization org = results.getContent().get(0);
             saveToSession(phone, "selectedOrgId", org.getId());
             return showorgmenu(org);
         }
         
+        saveToSession(phone, "selectedOrgId", null); // Clear any previously selected organization ID
         return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
     }
 
@@ -139,6 +170,7 @@ public class UssdController {
 
     private String HandleLevel3(String choice, String phone, String[] parts) {
         List<Long> orgids = getOrgIdsFromSession(phone);
+        Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
         
         System.out.println("HandleLevel3 - Phone: " + phone + ", Choice: " + choice + ", OrgIds: " + orgids);
         
@@ -153,9 +185,15 @@ public class UssdController {
                 clearSession(phone);
                 return HandleinitialMenu(phone, true);
             }
-            
+            // check if we already have a selected organization ID in session
+            if (selectedOrgId != null) {
+                System.out.println("Selected Organization ID already exists in session: " + selectedOrgId);
+                // If we have a selected organization, we can skip to Level 4
+                return handleLevel4(choice, phone, parts);
+            }
+            // Handle "More results" - this should NOT advance to Level 4
             if (selection == 6) {
-                return handleMoreResults(phone);
+                return handleMoreResults(phone); // This returns CON, staying at Level 3
             }
             
             // Check if selection is valid for displayed options (max 5)
@@ -166,11 +204,24 @@ public class UssdController {
                 return "END Invalid selection. Please try again.";
             }
             
+            // Get the selected organization ID from the current page's org_ids
             Long selectedID = orgids.get(selection - 1);
+            System.out.println("Selected ID: " + selectedID);
+            
+            // Save the selected organization ID to session
             saveToSession(phone, "selectedOrgId", selectedID);
             
-            Organization selectedOrg = OrganizationRepository.findById(selectedID)
-                .orElseThrow(() -> new RuntimeException("Organization not found"));
+            // Fetch the organization from database
+            Optional<Organization> selectedOrgOptional = OrganizationRepository.findById(selectedID);
+            if (!selectedOrgOptional.isPresent()) {
+                return "END Organization not found. Please try again.";
+            }
+            
+            Organization selectedOrg = selectedOrgOptional.get();
+            System.out.println("Selected Organization: " + selectedOrg.getName());
+            
+            // Reset the more results flow flag since we've made a selection
+            saveToSession(phone, "isMoreResultsFlow", false);
             
             return showorgmenu(selectedOrg);
             
@@ -178,10 +229,10 @@ public class UssdController {
             return "END Invalid input. Please enter a number.";
         } catch (Exception e) {
             System.err.println("Error in HandleLevel3: " + e.getMessage());
+            e.printStackTrace(); // Add this for better debugging
             return "END An error occurred. Please try again.";
         }
     }
-
     private String handleLevel4(String choice, String phone, String[] parts) {
         Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
         
@@ -198,13 +249,13 @@ public class UssdController {
         
         switch(choice) {
             case "1": 
-                return "END Contact Info:\nPhone: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") + 
+                return "CON Contact Info:\nPhone: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") + 
                        "\n\n0. Back to menu";
             case "2": 
-                return "END Address:\n" + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") + 
+                return "CON Address:\n" + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") + 
                        "\n\n0. Back to menu";
             case "3": 
-                return "END Description:\n" + (org.getDescription() != null ? org.getDescription() : "Not available") + 
+                return "CON Description:\n" + (org.getDescription() != null ? org.getDescription() : "Not available") + 
                        "\n\n0. Back to menu";
             case "4": 
                 return showMoreOptions(org);
@@ -230,18 +281,33 @@ public class UssdController {
         Organization org = orgOptional.get();
         String orgName = org.getName().toUpperCase();
         
-        if (orgName.contains("FHID") || orgName.contains("FEDERAL HOUSING")) {
+        if (orgName.contains("FHIS") || orgName.contains("FCT HEALTH") || orgName.contains("FCT HEALTH INSURANCE")) {
             switch(choice) {
                 case "1": 
-                    return handleFHIDEnrollment(org, phone);
+                    return handleFHISEnrollment(org, phone);
                 case "0": 
                     return showorgmenu(org);
                 default: 
                     return "END Invalid choice";
             }
         } else {
-            return "END This organization does not have specific FHID options.";
+            switch(choice) {
+                case "1":
+                    return "END Contact Info:\nPhone: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") + 
+                           "\n\n0. Back to menu";
+                case "2":
+                    return "END Address:\n" + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") + 
+                           "\n\n0. Back to menu";
+                case "3":
+                    return "END Description:\n" + (org.getDescription() != null ? org.getDescription() : "Not available") + 
+                           "\n\n0. Back to menu";
+                case "4":
+                    return showMoreOptions(org);
+                case "0":
+                    return backToSearchResults(phone);
+            }
         }
+        return "END Invalid choice";
     }
 
     private String backToSearchResults(String phone) {
@@ -263,16 +329,16 @@ public class UssdController {
 
     private String showMoreOptions(Organization org) {
         return "CON " + org.getName() + " - More Info:\n" +
-               "1. Email\n" +
-               "2. Website\n" +
-               "3. Services\n" +
-               "0. Back to main menu";
+               "1. Enroll\n" +
+               "2. Change Hospital\n";
     }
 
-    private String handleMoreResults(String phone) {
+     private String handleMoreResults(String phone) {
         String searchTerm = (String) retrieveFromSession(phone, "searchTerm");
         Integer currentPage = (Integer) retrieveFromSession(phone, "currentPage");
         Integer totalPages = (Integer) retrieveFromSession(phone, "totalPages");
+        
+        System.out.println("handleMoreResults - SearchTerm: " + searchTerm + ", CurrentPage: " + currentPage + ", TotalPages: " + totalPages);
         
         if (searchTerm == null || currentPage == null) {
             return "END No search term found. Please try again.";
@@ -300,7 +366,12 @@ public class UssdController {
             .collect(Collectors.toList());
         saveToSession(phone, "org_ids", org_ids);
         
-        return showOrganizationoptions(results.getContent(), nextPage, (int) results.getTotalPages());
+        System.out.println("handleMoreResults - New org_ids: " + org_ids);
+    
+        // Save isMoreResultsFlow to true to indicate we are in more results flow
+        saveToSession(phone, "isMoreResultsFlow", true);
+        
+        return showOrganizationoptions(results.getContent(), nextPage, totalPages);
     }
 
     private String normalizePhoneNumber(String phoneNumber) {
@@ -389,9 +460,9 @@ public class UssdController {
         }
     }
 
-    private String handleFHIDEnrollment(Organization org, String phone) {
+    private String handleFHISEnrollment(Organization org, String phone) {
         return "CON " + org.getName() + " Enrollment:\n" +
-               "Visit nearest FHID office with:\n" +
+               "Visit nearest FHIS office with:\n" +
                "- Valid ID\n" +
                "- Proof of income\n" +
                "- Passport photos\n" +
@@ -404,13 +475,16 @@ public class UssdController {
     private void clearSession(String phoneNumber) {
         try {
             String sessionkey = phoneNumber + ":";
-            redisTemplate.delete(sessionkey + "searchTerm");
-            redisTemplate.delete(sessionkey + "currentPage");
-            redisTemplate.delete(sessionkey + "totalPages");
-            redisTemplate.delete(sessionkey + "org_ids");
-            redisTemplate.delete(sessionkey + "selectedOrgId");
+            Set <String> keys = redisTemplate.keys(sessionkey + "*");
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+                System.out.println("Session cleared for phone: " + phoneNumber);
+            } else {
+                System.out.println("No session data found for phone: " + phoneNumber);
+            }
         } catch (Exception e) {
             System.err.println("Error clearing session: " + e.getMessage());
         }
     }
+    
 }
