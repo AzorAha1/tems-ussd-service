@@ -59,55 +59,56 @@ public class UssdController {
         
         boolean hasActiveSession = true;
         switch(step) {
-            case 0: 
+            case 0:
                 clearSession(normalizedPhoneNumber); // Clear session only when starting fresh
-                return HandleinitialMenu(normalizedPhoneNumber, hasActiveSession);
+                return HandleLevel1(normalizedPhoneNumber, parts, hasActiveSession);
             case 1: 
-                return HandleLevel1(parts[0], normalizedPhoneNumber, parts);
+                return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
             case 2: 
-                return HandleLevel2(parts[1], normalizedPhoneNumber, parts);
-            case 3: 
                 Boolean isMoreResultsFlowObj3 = (Boolean) retrieveFromSession(normalizedPhoneNumber, "isMoreResultsFlow");
                 boolean isMoreResultsFlow3 = Boolean.TRUE.equals(isMoreResultsFlowObj3);
-                System.out.println("Case 3 - isMoreResultsFlow: " + isMoreResultsFlow3 + ", input: " + parts[2]);
+                System.out.println("Case 3 - isMoreResultsFlow: " + isMoreResultsFlow3 + ", input: " + parts[1]);
                 
                 if (isMoreResultsFlow3) {
                     // If we are in more results flow, we should not clear the session
                     // Just handle the selection without clearing
                     System.out.println("Handling more results flow selection");
                     saveToSession(normalizedPhoneNumber, "isMoreResultsFlow", false);
-                    return HandleLevel3(parts[2], normalizedPhoneNumber, parts);
+                    return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
                 }
-                return HandleLevel3(parts[2], normalizedPhoneNumber, parts);
-            case 4: 
+                return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
+            case 3: 
                 // Check if this is actually a more results flow selection
                 Boolean isMoreResultsFlowObj4 = (Boolean) retrieveFromSession(normalizedPhoneNumber, "isMoreResultsFlow");
                 boolean isMoreResultsFlow4 = Boolean.TRUE.equals(isMoreResultsFlowObj4);
-                System.out.println("Case 4 - isMoreResultsFlow: " + isMoreResultsFlow4 + ", input: " + parts[3]);
+                System.out.println("Case 4 - isMoreResultsFlow: " + isMoreResultsFlow4 + ", input: " + parts[2]);
                 
                 if (isMoreResultsFlow4) {
                     // This is actually an organization selection from more results, not level 4
                     System.out.println("Handling organization selection from more results at step 4");
                     saveToSession(normalizedPhoneNumber, "isMoreResultsFlow", false);
-                    return HandleLevel3(parts[3], normalizedPhoneNumber, parts);
+                    return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
                 }
-                return handleLevel4(parts[3], normalizedPhoneNumber, parts);
-            case 5: 
-                return handlelevel5(parts[4], normalizedPhoneNumber, parts);
+                return handleLevel4(parts[2], normalizedPhoneNumber, parts);
+            case 4: 
+                return handlelevel5(parts[3], normalizedPhoneNumber, parts);
             default: 
                 return "END Session expired";
         }
     }
 
-    private String HandleLevel1(String text, String phone, String[] parts) {
-        switch(text) {
-            case "1":
-                return "CON Enter organisation name or initials:";
-            case "2": 
-                return "END Goodbye!";
-            default:
-                return "END Invalid Choice";
+    private String HandleLevel1(String phone, String[] parts, Boolean hasActiveSession) {
+        if (hasActiveSession) {
+            return "CON Welcome to TEMS SERVICE\n" +
+                    "Enter the name or initials of the organization you want to search for:\n";
+        } else {
+            return "CON Welcome to NIGERIAN TEMS SERVICE\n" +
+                "Cost: ₦50/session:\n" + 
+                "Please select an option:\n" +
+                "1. Subscribe to Service\n" +
+                "2. Exit";
         }
+        
     }
 
     private String HandleLevel2(String text, String phone, String[] parts) {
@@ -183,7 +184,7 @@ public class UssdController {
             
             if (selection == 0) {
                 clearSession(phone);
-                return HandleinitialMenu(phone, true);
+                return HandleLevel1(phone, parts, true); // Go back to Level 1
             }
             // check if we already have a selected organization ID in session
             if (selectedOrgId != null) {
@@ -395,19 +396,19 @@ public class UssdController {
         return OrganizationRepository.searchByNameOrInitialsContainingIgnoreCase(searchTerm, pageable);
     }
 
-    private String HandleinitialMenu(String phoneNumber, boolean hasActiveSession) {
-        if (hasActiveSession) {
-            return "CON Welcome back to NIGERIAN TEMS SERVICE\n" +
-                   "1. Search Organization\n" +
-                   "2. Exit";
-        } else {
-            return "CON Welcome to NIGERIAN TEMS SERVICE\n" +
-                "Cost: ₦50/session:\n" + 
-                "Please select an option:\n" +
-                "1. Subscribe to Service\n" +
-                "2. Exit";
-        }
-    }
+    // private String HandleinitialMenu(String phoneNumber, boolean hasActiveSession) {
+    //     if (hasActiveSession) {
+    //         return "CON Welcome back to NIGERIAN TEMS SERVICE\n" +
+    //                "1. Search Organization\n" +
+    //                "2. Exit";
+    //     } else {
+    //         return "CON Welcome to NIGERIAN TEMS SERVICE\n" +
+    //             "Cost: ₦50/session:\n" + 
+    //             "Please select an option:\n" +
+    //             "1. Subscribe to Service\n" +
+    //             "2. Exit";
+    //     }
+    // }
 
     private void saveToSession(String phoneNumber, String key, Object value) {
         try {
