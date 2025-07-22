@@ -6,14 +6,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.example.tems.Tems.Session.RedisConfig;
+import com.example.tems.Tems.model.FhisEnrollment;
 import com.example.tems.Tems.model.Organization;
+import com.example.tems.Tems.repository.FhisEnrollmentRepository;
 import com.example.tems.Tems.repository.OrganizationRepository;
 import com.example.tems.Tems.service.AggregatorService;
 import com.example.tems.Tems.service.SubscriptionService;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cglib.core.Local;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,15 +34,18 @@ public class UssdController {
     private OrganizationRepository OrganizationRepository;
     private AggregatorService aggregatorService;
     private SubscriptionService subscriptionService;
+    private FhisEnrollmentRepository fhisEnrollmentRepository;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
     
     @Autowired
-    public UssdController(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService) {
+    public UssdController(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, 
+                          FhisEnrollmentRepository fhisEnrollmentRepository) {
         this.OrganizationRepository = organizationRepository;
         this.aggregatorService = aggregatorService;
         this.subscriptionService = subscriptionService;
+        this.fhisEnrollmentRepository = fhisEnrollmentRepository;
     }
     
     @PostMapping(
@@ -56,7 +63,16 @@ public class UssdController {
         String inputedText = (inputText == null) ? "" : inputText;
         String[] parts = inputedText.isEmpty() ? new String[0] : inputedText.split("\\*");
         int step = parts.length;
-        
+
+
+        // informal sector enrollment flow
+        // getting currentflow
+        String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
+        System.out.println("Current Flow: " + currentFlow);
+        if (currentFlow != null && currentFlow.equals("fhis_enrollement")) {
+            return handleFHISEnrollment(normalizedPhoneNumber, inputedText);
+        }
+
         boolean hasActiveSession = true;
         switch(step) {
             case 0:
@@ -462,15 +478,16 @@ public class UssdController {
     }
 
     private String handleFHISEnrollment(Organization org, String phone) {
-        return "CON " + org.getName() + " Enrollment:\n" +
-               "Visit nearest FHIS office with:\n" +
-               "- Valid ID\n" +
-               "- Proof of income\n" +
-               "- Passport photos\n" +
-               "\n" +
-               "Contact: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") + "\n" +
-               "\n" +
-               "0. Back to menu";
+        // save enrollement current flow
+        saveToSession(phone, "currentFlow", "fhis_enrollement");
+        saveToSession(phone, "enrollmentStep", "sector_selection");
+        saveToSession(phone, "enrollmentOrgId", org.getId());
+
+        return "CON FHIS Enrollment Started\n" +
+           "Select enrollment type:\n" +
+           "1. Informal Sector\n" +
+           "2. Formal Sector (Coming Soon)\n" +
+           "0. Back to menu"; 
     }
 
     private void clearSession(String phoneNumber) {
@@ -488,4 +505,42 @@ public class UssdController {
         }
     }
     
+    private String handleFHISEnrollment(String phoneNumber, String inputText) {
+        return "chill";
+    }
+
+    // create or update fhis enrollment
+    private FhisEnrollment GetorCreateFhisEnrollment(String phoneNumber) {
+        // check for existing enrollment
+        Optional<FhisEnrollment> existingEnrollment = fhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
+
+        if (existingEnrollment.isPresent()) {
+            FhisEnrollment newEnrollment = new FhisEnrollment();
+            newEnrollment.setPhoneNumber(phoneNumber);
+            newEnrollment.setCreatedAt(LocalDateTime.now());
+            newEnrollment.setUpdatedAt(LocalDateTime.now());
+            newEnrollment.setCurrentStep("sector_selection");
+            newEnrollment.setEnrollmentType("informal_sector");
+            return fhisEnrollmentRepository.save(newEnrollment);
+        }
+        return null;
+    }
+    private void clearenrollmentSession(String phoneNumber) {
+       try {
+            Set<String> keys = redisTemplate.keys(phoneNumber + ":enrollment:*");
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+                System.out.println("Enrollment session cleared for phone: " + phoneNumber);
+            } else {
+                System.out.println("No enrollment session data found for phone: " + phoneNumber);
+            }
+            saveToSession(phoneNumber, "currentFlow", null); // Clear current flow
+
+            saveToSession(phoneNumber, "enrollmentStep", null); // Clear enrollment step
+            saveToSession(phoneNumber, "CurrentField", null); // Clear enrollment organization ID
+       } catch (Exception e) {
+            System.err.println("Error clearing enrollment session: " + e.getMessage());
+        }
+
+    }
 }
