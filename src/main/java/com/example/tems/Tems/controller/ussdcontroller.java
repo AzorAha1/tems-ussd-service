@@ -483,6 +483,9 @@ public class UssdController {
         saveToSession(phone, "enrollmentStep", "sector_selection");
         saveToSession(phone, "enrollmentOrgId", org.getId());
 
+        // create new enrollment
+
+
         return "CON FHIS Enrollment Started\n" +
            "Select enrollment type:\n" +
            "1. Informal Sector\n" +
@@ -515,15 +518,14 @@ public class UssdController {
         Optional<FhisEnrollment> existingEnrollment = fhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
 
         if (existingEnrollment.isPresent()) {
-            FhisEnrollment newEnrollment = new FhisEnrollment();
-            newEnrollment.setPhoneNumber(phoneNumber);
-            newEnrollment.setCreatedAt(LocalDateTime.now());
-            newEnrollment.setUpdatedAt(LocalDateTime.now());
-            newEnrollment.setCurrentStep("sector_selection");
-            newEnrollment.setEnrollmentType("informal_sector");
-            return fhisEnrollmentRepository.save(newEnrollment);
+            return existingEnrollment.get();
         }
-        return null;
+        FhisEnrollment newEnrollment = new FhisEnrollment();
+        newEnrollment.setPhoneNumber(phoneNumber);
+        newEnrollment.setCreatedAt(LocalDateTime.now());
+        newEnrollment.setUpdatedAt(LocalDateTime.now());
+        newEnrollment.setCurrentStep("sector_selection");
+        return fhisEnrollmentRepository.save(newEnrollment);
     }
     private void clearenrollmentSession(String phoneNumber) {
        try {
