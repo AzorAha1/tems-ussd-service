@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "fhis_enrollment") // Explicitly specify table name
+@Table(name = "informal_fhis_enrollment") // Explicitly specify table name
 public class InformalFhisEnrollment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
