@@ -730,7 +730,13 @@ public class UssdController {
             saveToSession(phone, "currentField", "fhisNo");
             return "CON INFORMAL SECTOR\nEnter your FHIS Number:";
         } else if (choice.equals("2")) {
-            return "END Formal sector enrollment is coming soon. Please check back later.";
+            FhisEnrollment enrollment = GetorCreateFhisEnrollment(phone);
+            enrollment.setEnrollmentType("Formal");
+            enrollment.setCurrentStep("personal_data");
+            fhisEnrollmentRepository.save(enrollment);
+            saveToSession(phone, "currentField", "fhisNo");
+            return "CON FORMAL SECTOR (Coming Soon)\n" +
+                    "Enter your FHIS Number:";
         } else if (choice.equals("0")) {
             clearenrollmentSession(phone);
             resetUserSession(phone); // Ensure full reset
@@ -1099,13 +1105,14 @@ public class UssdController {
                 fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "maritalStatus");
                 saveToSession(phone, "waitingForContinue", true); // Flag to wait for user choice
-                return "CON Personal data saved! (25% done)\n1. Continue to social data\n0. Back";
+                return "CON You have reached 25% of your enrolment process into FHIS. Please continue to conclude your FHIS registration in order to access affordable healthcare services.\n" + 
+                    "1. Continue to social data\n0. Back";
             case "social_data":
                 enrollment.setCurrentStep("corporate_data");
                 fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "ninNumber");
                 saveToSession(phone, "waitingForContinue", true); // Flag to wait for user choice
-                return "CON 50% completed! Social Details Saved.\n" +
+                return "CON You have reached 50% of your enrolment process into FHIS! Social Details Saved.\n" +
                         "We will now ask for your corporate data.\n" +
                         "1. Continue\n" +
                         "2. Cancel Enrollment";
@@ -1113,7 +1120,7 @@ public class UssdController {
                 enrollment.setCurrentStep("completed");
                 enrollment.setUpdatedAt(LocalDateTime.now());
                 fhisEnrollmentRepository.save(enrollment);
-                return "CON 75% completed! Almost done.\n" +
+                return "CON You have reached 75% of your enrolment process into FHIS! Almost done.\n" +
                         showEnrollmentSummary(enrollment) +
                         "\n1. Confirm Enrollment\n" +
                         "2. Edit Details\n" +
