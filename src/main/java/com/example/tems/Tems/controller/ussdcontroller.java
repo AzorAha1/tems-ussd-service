@@ -65,6 +65,9 @@ public class UssdController {
         }
         String inputedText = (inputText == null) ? "" : inputText;
 
+        // extend number on every request
+        extendUserSession(normalizedPhoneNumber);
+
         // Check for FHIS enrollment flow FIRST, before parsing steps
         String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
         System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
@@ -445,7 +448,7 @@ public class UssdController {
             System.out.println("Saving to session - Key: " + sessionkey +
                     ", Type: " + (value != null ? value.getClass().getSimpleName() : "null") +
                     ", Value: " + value);
-            redisTemplate.opsForValue().set(sessionkey, value, 5, TimeUnit.MINUTES);
+            redisTemplate.opsForValue().set(sessionkey, value, 30, TimeUnit.MINUTES);
         } catch (Exception e) {
             System.err.println("Error saving to session: " + e.getMessage());
         }
@@ -510,6 +513,20 @@ public class UssdController {
                 "2. Formal Sector (Coming Soon)\n" +
                 "0. Back to menu";
     }
+    //extend session time
+    private void extendUserSession(String phonenumber) {
+        try {
+            Set<String> userkeys = redisTemplate.keys(phonenumber + ":*");
+            if (userkeys != null && !userkeys.isEmpty()) {
+                for (String key : userkeys) {
+                    redisTemplate.expire(key, 30, TimeUnit.MINUTES);
+                }
+                System.out.println("Session extended for phone: " + phonenumber);
+            }
+        } catch (Exception e) {
+            System.err.println("Error extending user session: " + e.getMessage());
+        }
+    }
 
     // Consider removing if resetUserSession is sufficient
     private void clearSession(String phoneNumber) {
@@ -542,6 +559,13 @@ public class UssdController {
     private String handleFHISEnrollmentFlow(String phoneNumber, String inputText) {
         System.out.println("FHIS Enrollment Flow - Phone: " + phoneNumber + ", Input: " + inputText);
         try {
+            String viewingDetails = (String) retrieveFromSession(phoneNumber, "viewingDetails");
+            if ("true".equals(viewingDetails) && "0".equals(inputText)) {
+                saveToSession(phoneNumber, "viewingDetails", null);
+                // Go back to the existing enrollment menu
+                return checkExistingEnrollment(phoneNumber);
+            }
+
             // Parse the input to get the last choice made
             String lastChoice = "";
             if (inputText != null && !inputText.isEmpty()) {
@@ -573,6 +597,14 @@ public class UssdController {
             }
 
             System.out.println("Current Step: " + currentStep + ", Last Choice: " + lastChoice);
+            String currentField = (String) retrieveFromSession(phoneNumber, "currentField");
+            if (currentField == null && !currentStep.equals("sector_selection") && !currentStep.equals("completed")) {
+            currentField = determineCurrentFieldFromEnrollment(enrollment, currentStep);
+            if (currentField != null) {
+                saveToSession(phoneNumber, "currentField", currentField);
+                System.out.println("Set missing currentField to: " + currentField + " for step: " + currentStep);
+            }
+        }
 
             // Check if we're waiting for a continuation choice
             String continuationResult = handleContinuationChoice(phoneNumber, lastChoice, enrollment);
@@ -604,15 +636,44 @@ public class UssdController {
         }
     }
 
-    // FIXED: Implemented checkExistingEnrollment method
+    private String determineCurrentFieldFromEnrollment(FhisEnrollment enrollment, String currentStep) {
+        switch (currentStep) {
+            case "personal_data":
+                if (enrollment.getFhisNo() == null) return "fhisNo";
+                if (enrollment.getTitle() == null) return "title";
+                if (enrollment.getSurname() == null) return "surname";
+                if (enrollment.getFirstName() == null) return "firstName";
+                if (enrollment.getMiddleName() == null) return "middleName";
+                if (enrollment.getDateOfBirth() == null) return "dateOfBirth";
+                break;
+                
+            case "social_data":
+                if (enrollment.getMaritalStatus() == null) return "maritalStatus";
+                if (enrollment.getEmail() == null) return "email";
+                if (enrollment.getBloodGroup() == null) return "bloodGroup";
+                if (enrollment.getResidentialAddress() == null) return "residentialAddress";
+                if (enrollment.getOccupation() == null) return "occupation";
+                break;
+                
+            case "corporate_data":
+                if (enrollment.getNinNumber() == null) return "ninNumber";
+                if (enrollment.getTelephoneNumber() == null) return "telephoneNumber";
+                if (enrollment.getOrganizationName() == null) return "organizationName";
+                break;
+        }
+        return null;
+    }
+
     private String checkExistingEnrollment(String phoneNumber) {
         try {
             Optional<FhisEnrollment> existing = fhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
             if (existing.isPresent()) {
                 FhisEnrollment enrollment = existing.get();
                 String currentStep = enrollment.getCurrentStep();
-
+    
                 if ("completed".equals(currentStep)) {
+                    // Mark that we're showing existing enrollment menu
+                    saveToSession(phoneNumber, "existingEnrollmentFlow", "completed");
                     return "CON You already have a completed FHIS enrollment.\n" +
                             "Name: " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
                             "FHIS No: " + enrollment.getFhisNo() + "\n" +
@@ -620,6 +681,7 @@ public class UssdController {
                             "2. View details\n" +
                             "0. Back to menu";
                 } else if (currentStep != null && !currentStep.equals("sector_selection")) {
+                    saveToSession(phoneNumber, "existingEnrollmentFlow", "incomplete");
                     return "CON Existing enrollment found (Incomplete).\n" +
                             "Progress: " + getProgressPercentage(currentStep) + "%\n" +
                             "1. Continue existing\n" +
@@ -691,10 +753,13 @@ public class UssdController {
                 return "END Enrollment not found. Please try again.";
             }
             FhisEnrollment enrollment = existing.get();
+            // get current existing flow
+            String existingFlow = (String) retrieveFromSession(phone, "existingEnrollmentFlow");
+
 
             switch (choice) {
                 case "1": // Continue existing or start new
-                    if ("completed".equals(enrollment.getCurrentStep())) {
+                    if ("completed".equals(existingFlow)) {
                         // Delete existing and start fresh
                         fhisEnrollmentRepository.delete(enrollment);
                         clearenrollmentSession(phone);
@@ -710,9 +775,10 @@ public class UssdController {
                         return resumeEnrollmentStep(enrollment);
                     }
                 case "2": // View details or start fresh
-                    if ("completed".equals(enrollment.getCurrentStep())) {
+                    if ("completed".equals(existingFlow)) {
+                        saveToSession(phone, "viewingDetails", "true");
                         return "CON Enrollment Details:\n" +
-                                "Name: " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
+                                "Name: " + enrollment.getTitle() + " " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
                                 "FHIS: " + enrollment.getFhisNo() + "\n" +
                                 "Type: " + enrollment.getEnrollmentType() + "\n" +
                                 "0. Back to menu";
@@ -802,6 +868,18 @@ public class UssdController {
         System.out.println("Personal Data - Field: " + currentField + ", Input: " + inputText);
 
         if (currentField == null) {
+            currentField = determineCurrentFieldFromEnrollment(enrollment, "personal_data");
+            if (currentField == null) {
+                // All personal data is complete, move to next stage
+                return moveToNextStage(phone, enrollment);
+            }
+            saveToSession(phone, "currentField", currentField);
+            System.out.println("Auto-determined currentField: " + currentField);
+        }
+        
+        System.out.println("Personal Data - Field: " + currentField + ", Input: " + inputText);
+        
+        if (currentField == null) {
             currentField = "fhisNo";
             saveToSession(phone, "currentField", currentField);
         }
@@ -826,6 +904,7 @@ public class UssdController {
                     return "CON Invalid title. Please enter Mr, Mrs, Ms, or Dr:";
                 }
                 enrollment.setTitle(inputText.trim());
+                fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "surname");
                 return "CON Enter your Surname:";
             case "surname":
@@ -833,6 +912,7 @@ public class UssdController {
                     return "CON Invalid surname format. Please enter a valid surname:";
                 }
                 enrollment.setSurname(inputText.trim());
+                fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "firstName");
                 return "CON Enter your First Name:";
             case "firstName":
@@ -840,11 +920,13 @@ public class UssdController {
                     return "CON Invalid first name format. Please enter a valid first name:";
                 }
                 enrollment.setFirstName(inputText.trim());
+                fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "middleName");
                 return "CON Enter your Middle Name (optional):";
             case "middleName":
                 enrollment.setMiddleName(inputText != null ? inputText.trim() : "");
                 saveToSession(phone, "currentField", "dateOfBirth");
+                fhisEnrollmentRepository.save(enrollment);
                 return "CON Enter your Date of Birth (YYYY-MM-DD):";
             case "dateOfBirth":
                 if (!isValidDateOfBirth(inputText)) {
@@ -855,12 +937,31 @@ public class UssdController {
                 fhisEnrollmentRepository.save(enrollment);
                 return moveToNextStage(phone, enrollment);
             default:
+                // Invalid field, determine correct field and redirect
+                String correctField = determineCurrentFieldFromEnrollment(enrollment, "personal_data");
+                if (correctField != null) {
+                    saveToSession(phone, "currentField", correctField);
+                    return "CON Please enter " + getFieldDisplayName(correctField) + ":";
+                }
                 return "END Invalid field. Please start over.";
         }
     }
 
     private String handleSocialData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
+        System.out.println("Social Data - Field: " + currentField + ", Input: " + inputText);
+
+        // CRITICAL FIX: If currentField is null, determine what field we need
+        if (currentField == null) {
+            currentField = determineCurrentFieldFromEnrollment(enrollment, "social_data");
+            if (currentField == null) {
+                // All social data is complete, move to next stage
+                return moveToNextStage(phone, enrollment);
+            }
+            saveToSession(phone, "currentField", currentField);
+            System.out.println("Auto-determined currentField: " + currentField);
+        }
+    
         System.out.println("Social Data - Field: " + currentField + ", Input: " + inputText);
 
         if (inputText == null || inputText.trim().isEmpty()) {
@@ -882,6 +983,7 @@ public class UssdController {
                     return "CON Invalid email format. Please enter a valid email address:";
                 }
                 enrollment.setEmail(inputText.trim());
+                fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "bloodGroup");
                 return "CON Enter your Blood Group:";
             case "bloodGroup":
@@ -889,10 +991,12 @@ public class UssdController {
                     return "CON Invalid blood group. Please enter A+, A-, B+, B-, AB+, AB-, O+, or O-:";
                 }
                 enrollment.setBloodGroup(inputText.trim());
+                fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "residentialAddress");
                 return "CON Enter your Residential Address:";
             case "residentialAddress":
                 enrollment.setResidentialAddress(inputText.trim());
+                fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "occupation");
                 return "CON Enter your Occupation:";
             case "occupation":
@@ -901,12 +1005,31 @@ public class UssdController {
                 fhisEnrollmentRepository.save(enrollment);
                 return moveToNextStage(phone, enrollment);
             default:
+            // Invalid field, determine correct field and redirect
+                String correctField = determineCurrentFieldFromEnrollment(enrollment, "social_data");
+                if (correctField != null) {
+                    saveToSession(phone, "currentField", correctField);
+                    return "CON Please enter " + getFieldDisplayName(correctField) + ":";
+                }
                 return "END Invalid field. Please start over.";
         }
     }
 
     private String handleCorporateData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
+        System.out.println("Corporate Data - Field: " + currentField + ", Input: " + inputText);
+
+        // CRITICAL FIX: If currentField is null, determine what field we need
+        if (currentField == null) {
+            currentField = determineCurrentFieldFromEnrollment(enrollment, "corporate_data");
+            if (currentField == null) {
+                // All corporate data is complete, move to next stage
+                return moveToNextStage(phone, enrollment);
+            }
+            saveToSession(phone, "currentField", currentField);
+            System.out.println("Auto-determined currentField: " + currentField);
+        }
+        
         System.out.println("Corporate Data - Field: " + currentField + ", Input: " + inputText);
 
         if (inputText == null || inputText.trim().isEmpty()) {
@@ -928,6 +1051,7 @@ public class UssdController {
                     return "CON Invalid phone number format. Please enter a valid phone number:";
                 }
                 enrollment.setTelephoneNumber(inputText.trim());
+                fhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "organizationName");
                 return "CON Enter your Organization Name:";
             case "organizationName":
@@ -936,6 +1060,11 @@ public class UssdController {
                 fhisEnrollmentRepository.save(enrollment);
                 return moveToNextStage(phone, enrollment);
             default:
+                String correctField = determineCurrentFieldFromEnrollment(enrollment, "corporate_data");
+                if (correctField != null) {
+                    saveToSession(phone, "currentField", correctField);
+                    return "CON Please enter " + getFieldDisplayName(correctField) + ":";
+                }
                 return "END Invalid field. Please start over.";
         }
     }
@@ -1093,8 +1222,8 @@ public class UssdController {
     private boolean isValidFhisNumber(String fhisNo) {
         if (fhisNo == null || fhisNo.isEmpty())
             return false;
-        // Add your FHIS number validation logic here (e.g., format, length)
-        return fhisNo.matches("^[A-Za-z0-9]{6,20}$"); // Example: alphanumeric, 6-20 chars
+        // Allow 1-20 alphanumeric characters instead of 6-20
+        return fhisNo.matches("^[A-Za-z0-9]{1,20}$");
     }
 
     private boolean isValidTitle(String title) {
