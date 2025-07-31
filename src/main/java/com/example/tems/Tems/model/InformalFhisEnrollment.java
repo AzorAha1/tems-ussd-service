@@ -6,7 +6,7 @@ import jakarta.persistence.*;
 
 @Entity
 @Table(name = "fhis_enrollment") // Explicitly specify table name
-public class FhisEnrollment {
+public class InformalFhisEnrollment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -96,10 +96,10 @@ public class FhisEnrollment {
     }
 
     // Default constructor
-    public FhisEnrollment() {}
+    public InformalFhisEnrollment() {}
 
     // Full constructor (keep your existing one)
-    public FhisEnrollment(String phoneNumber, String enrollmentType, String currentStep, LocalDateTime createdAt, LocalDateTime updatedAt,
+    public InformalFhisEnrollment(String phoneNumber, String enrollmentType, String currentStep, LocalDateTime createdAt, LocalDateTime updatedAt,
                           String fhisNo, String title, String surname, String firstName, String middleName, String dateOfBirth,
                           String maritalStatus, String email, String bloodGroup, String residentialAddress, String occupation,
                           String ninNumber, String telephoneNumber, String organizationName) {

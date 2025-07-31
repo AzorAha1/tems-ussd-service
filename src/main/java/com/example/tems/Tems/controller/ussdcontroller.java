@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.example.tems.Tems.Session.RedisConfig;
-import com.example.tems.Tems.model.FhisEnrollment;
+import com.example.tems.Tems.model.InformalFhisEnrollment;
 import com.example.tems.Tems.model.Organization;
 import com.example.tems.Tems.repository.FhisEnrollmentRepository;
 import com.example.tems.Tems.repository.OrganizationRepository;
@@ -583,7 +583,7 @@ public class UssdController {
             }
 
             // Get or create enrollment record
-            FhisEnrollment enrollment = GetorCreateFhisEnrollment(phoneNumber);
+            InformalFhisEnrollment enrollment = GetorCreateFhisEnrollment(phoneNumber);
             if (enrollment == null) {
                 clearenrollmentSession(phoneNumber);
                 return "END Error retrieving enrollment. Please try again.";
@@ -636,7 +636,7 @@ public class UssdController {
         }
     }
 
-    private String determineCurrentFieldFromEnrollment(FhisEnrollment enrollment, String currentStep) {
+    private String determineCurrentFieldFromEnrollment(InformalFhisEnrollment enrollment, String currentStep) {
         switch (currentStep) {
             case "personal_data":
                 if (enrollment.getFhisNo() == null) return "fhisNo";
@@ -666,9 +666,9 @@ public class UssdController {
 
     private String checkExistingEnrollment(String phoneNumber) {
         try {
-            Optional<FhisEnrollment> existing = fhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
+            Optional<InformalFhisEnrollment> existing = fhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
             if (existing.isPresent()) {
-                FhisEnrollment enrollment = existing.get();
+                InformalFhisEnrollment enrollment = existing.get();
                 String currentStep = enrollment.getCurrentStep();
     
                 if ("completed".equals(currentStep)) {
@@ -723,14 +723,14 @@ public class UssdController {
         }
 
         if (choice.equals("1")) {
-            FhisEnrollment enrollment = GetorCreateFhisEnrollment(phone);
+            InformalFhisEnrollment enrollment = GetorCreateFhisEnrollment(phone);
             enrollment.setEnrollmentType("Informal");
             enrollment.setCurrentStep("personal_data");
             fhisEnrollmentRepository.save(enrollment);
             saveToSession(phone, "currentField", "fhisNo");
             return "CON INFORMAL SECTOR\nEnter your FHIS Number:";
         } else if (choice.equals("2")) {
-            FhisEnrollment enrollment = GetorCreateFhisEnrollment(phone);
+            InformalFhisEnrollment enrollment = GetorCreateFhisEnrollment(phone);
             enrollment.setEnrollmentType("Formal");
             enrollment.setCurrentStep("personal_data");
             fhisEnrollmentRepository.save(enrollment);
@@ -753,12 +753,12 @@ public class UssdController {
     // FIXED: Implemented handleExistingEnrollmentChoice
     private String handleExistingEnrollmentChoice(String phone, String choice) {
         try {
-            Optional<FhisEnrollment> existing = fhisEnrollmentRepository.findByPhoneNumber(phone);
+            Optional<InformalFhisEnrollment> existing = fhisEnrollmentRepository.findByPhoneNumber(phone);
             if (!existing.isPresent()) {
                 clearenrollmentSession(phone);
                 return "END Enrollment not found. Please try again.";
             }
-            FhisEnrollment enrollment = existing.get();
+            InformalFhisEnrollment enrollment = existing.get();
             // get current existing flow
             String existingFlow = (String) retrieveFromSession(phone, "existingEnrollmentFlow");
 
@@ -827,7 +827,7 @@ public class UssdController {
     }
 
     // FIXED: Implemented helper
-    private String resumeEnrollmentStep(FhisEnrollment enrollment) {
+    private String resumeEnrollmentStep(InformalFhisEnrollment enrollment) {
         String currentStep = enrollment.getCurrentStep();
         switch (currentStep) {
             case "personal_data":
@@ -869,7 +869,7 @@ public class UssdController {
         }
     }
 
-    private String handlePersonalData(String phone, String inputText, FhisEnrollment enrollment) {
+    private String handlePersonalData(String phone, String inputText, InformalFhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
         System.out.println("Personal Data - Field: " + currentField + ", Input: " + inputText);
 
@@ -953,7 +953,7 @@ public class UssdController {
         }
     }
 
-    private String handleSocialData(String phone, String inputText, FhisEnrollment enrollment) {
+    private String handleSocialData(String phone, String inputText, InformalFhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
         System.out.println("Social Data - Field: " + currentField + ", Input: " + inputText);
 
@@ -1021,7 +1021,7 @@ public class UssdController {
         }
     }
 
-    private String handleCorporateData(String phone, String inputText, FhisEnrollment enrollment) {
+    private String handleCorporateData(String phone, String inputText, InformalFhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
         System.out.println("Corporate Data - Field: " + currentField + ", Input: " + inputText);
 
@@ -1075,7 +1075,7 @@ public class UssdController {
         }
     }
 
-    private String HandleEnrollmentCompletion(String phone, String inputText, FhisEnrollment enrollment) {
+    private String HandleEnrollmentCompletion(String phone, String inputText, InformalFhisEnrollment enrollment) {
         switch (inputText) {
             case "1":
                 enrollment.setCurrentStep("completed");
@@ -1098,7 +1098,7 @@ public class UssdController {
         }
     }
 
-    private String moveToNextStage(String phone, FhisEnrollment enrollment) {
+    private String moveToNextStage(String phone, InformalFhisEnrollment enrollment) {
         switch (enrollment.getCurrentStep()) {
             case "personal_data":
                 enrollment.setCurrentStep("social_data");
@@ -1130,7 +1130,7 @@ public class UssdController {
         }
     }
 
-    private String handleContinuationChoice(String phone, String choice, FhisEnrollment enrollment) {
+    private String handleContinuationChoice(String phone, String choice, InformalFhisEnrollment enrollment) {
         Boolean waitingForContinue = (Boolean) retrieveFromSession(phone, "waitingForContinue");
         if (Boolean.TRUE.equals(waitingForContinue)) {
             saveToSession(phone, "waitingForContinue", false); // Clear the flag
@@ -1164,7 +1164,7 @@ public class UssdController {
         }
     }
 
-    private String showEnrollmentSummary(FhisEnrollment enrollment) {
+    private String showEnrollmentSummary(InformalFhisEnrollment enrollment) {
         return "REVIEW:\n" +
                 "Name: " + enrollment.getTitle() + " " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
                 "FHIS: " + enrollment.getFhisNo() + "\n" +
@@ -1172,19 +1172,19 @@ public class UssdController {
                 "Phone: " + enrollment.getTelephoneNumber();
     }
 
-    private FhisEnrollment GetorCreateFhisEnrollment(String phoneNumber) {
+    private InformalFhisEnrollment GetorCreateFhisEnrollment(String phoneNumber) {
         try {
-            Optional<FhisEnrollment> existingEnrollment = fhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
+            Optional<InformalFhisEnrollment> existingEnrollment = fhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
             if (existingEnrollment.isPresent()) {
                 System.out.println("Found existing enrollment for phone: " + phoneNumber);
-                FhisEnrollment enrollment = existingEnrollment.get();
+                InformalFhisEnrollment enrollment = existingEnrollment.get();
                 // Check if it's a completed enrollment that needs to be handled differently
                 if ("completed".equals(enrollment.getCurrentStep())) {
                     saveToSession(phoneNumber, "existingEnrollmentFlow", "true");
                 }
                 return enrollment;
             }
-            FhisEnrollment newEnrollment = new FhisEnrollment();
+            InformalFhisEnrollment newEnrollment = new InformalFhisEnrollment();
             newEnrollment.setPhoneNumber(phoneNumber);
             newEnrollment.setCreatedAt(LocalDateTime.now());
             newEnrollment.setUpdatedAt(LocalDateTime.now());
