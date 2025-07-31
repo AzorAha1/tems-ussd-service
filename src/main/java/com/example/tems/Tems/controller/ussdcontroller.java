@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 import com.example.tems.Tems.Session.RedisConfig;
 import com.example.tems.Tems.model.InformalFhisEnrollment;
 import com.example.tems.Tems.model.Organization;
+import com.example.tems.Tems.model.FormalFhisEnrollment;
 import com.example.tems.Tems.repository.FhisEnrollmentRepository;
 import com.example.tems.Tems.repository.OrganizationRepository;
 import com.example.tems.Tems.service.AggregatorService;
@@ -723,17 +724,19 @@ public class UssdController {
         }
 
         if (choice.equals("1")) {
-            InformalFhisEnrollment enrollment = GetorCreateFhisEnrollment(phone);
+            InformalFhisEnrollment enrollment = GetorCreateInformalFhisEnrollment(phone);
             enrollment.setEnrollmentType("Informal");
             enrollment.setCurrentStep("personal_data");
             fhisEnrollmentRepository.save(enrollment);
+            saveToSession(phone, "currentFlow", "informal_fhis_enrollment");
             saveToSession(phone, "currentField", "fhisNo");
             return "CON INFORMAL SECTOR\nEnter your FHIS Number:";
         } else if (choice.equals("2")) {
-            InformalFhisEnrollment enrollment = GetorCreateFhisEnrollment(phone);
+            FormalFhisEnrollment enrollment = GetorCreateFormalFhisEnrollment(phone);
             enrollment.setEnrollmentType("Formal");
             enrollment.setCurrentStep("personal_data");
             fhisEnrollmentRepository.save(enrollment);
+            saveToSession(phone, "currentFlow", "formal_fhis_enrollment");
             saveToSession(phone, "currentField", "fhisNo");
             return "CON FORMAL SECTOR (Coming Soon)\n" +
                     "Enter your FHIS Number:";
@@ -1172,7 +1175,7 @@ public class UssdController {
                 "Phone: " + enrollment.getTelephoneNumber();
     }
 
-    private InformalFhisEnrollment GetorCreateFhisEnrollment(String phoneNumber) {
+    private InformalFhisEnrollment GetorCreateInformalFhisEnrollment(String phoneNumber) {
         try {
             Optional<InformalFhisEnrollment> existingEnrollment = fhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
             if (existingEnrollment.isPresent()) {
@@ -1192,6 +1195,24 @@ public class UssdController {
             return fhisEnrollmentRepository.save(newEnrollment);
         } catch (Exception e) {
             System.err.println("Error getting or creating FHIS enrollment: " + e.getMessage());
+            return null;
+        }
+    }
+    private FormalFhisEnrollment GetorCreateFormalFhisEnrollment(String phoneNumber) {
+        try {
+            Optional<FormalFhisEnrollment> existingEnrollment = formalFhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
+            if (existingEnrollment.isPresent()) {
+                System.out.println("Found existing formal enrollment for phone: " + phoneNumber);
+                return existingEnrollment.get();
+            }
+            FormalFhisEnrollment newEnrollment = new FormalFhisEnrollment();
+            newEnrollment.setPhoneNumber(phoneNumber);
+            newEnrollment.setCreatedAt(LocalDateTime.now());
+            newEnrollment.setUpdatedAt(LocalDateTime.now());
+            newEnrollment.setCurrentStep("sector_selection");
+            return formalFhisEnrollmentRepository.save(newEnrollment);
+        } catch (Exception e) {
+            System.err.println("Error getting or creating formal FHIS enrollment: " + e.getMessage());
             return null;
         }
     }
