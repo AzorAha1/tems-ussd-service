@@ -9,7 +9,7 @@ import com.example.tems.Tems.Session.RedisConfig;
 import com.example.tems.Tems.model.InformalFhisEnrollment;
 import com.example.tems.Tems.model.Organization;
 import com.example.tems.Tems.model.FormalFhisEnrollment;
-import com.example.tems.Tems.repository.FhisEnrollmentRepository;
+import com.example.tems.Tems.repository.InformalFhisEnrollmentRepository;
 import com.example.tems.Tems.repository.OrganizationRepository;
 import com.example.tems.Tems.service.AggregatorService;
 import com.example.tems.Tems.service.SubscriptionService;
@@ -39,7 +39,7 @@ public class UssdController {
     private OrganizationRepository organizationRepository;
     private AggregatorService aggregatorService;
     private SubscriptionService subscriptionService;
-    private FhisEnrollmentRepository fhisEnrollmentRepository;
+    private InformalFhisEnrollmentRepository fhisEnrollmentRepository;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -47,7 +47,7 @@ public class UssdController {
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
     public UssdController(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService,
-            FhisEnrollmentRepository fhisEnrollmentRepository) {
+            InformalFhisEnrollmentRepository fhisEnrollmentRepository) {
         this.organizationRepository = organizationRepository;
         this.aggregatorService = aggregatorService;
         this.subscriptionService = subscriptionService;
