@@ -4,12 +4,21 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "formal_fhis_enrollment")
-public class FormalFhisEnrollment {
+@Table(name = "fhis_enrollment")
+public class FhisEnrollment {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "title")
+    private String title;
+
+    @Column(name = "nin_number") 
+    private String ninNumber;
+
+    @Column(name = "organization_name")
+    private String organizationName;
 
     // Common fields
     @Column(name = "phone_number", nullable = false, unique = true)
@@ -96,16 +105,17 @@ public class FormalFhisEnrollment {
     private String hospitalCodeNo;
 
     // Constructors
-    public FormalFhisEnrollment() {}
+    public FhisEnrollment() {}
 
-    public FormalFhisEnrollment(String phoneNumber, String enrollmentType, String currentStep,
+    public FhisEnrollment(String phoneNumber, String enrollmentType, String currentStep,
                                 LocalDateTime createdAt, LocalDateTime updatedAt, String fhisNo,
                                 String surname, String firstName, String middleName, String dateOfBirth,
                                 String sex, String bloodGroup, String designation, String occupation,
                                 String presentStation, String rank, String pfNumber, String sdaName,
                                 String maritalStatus, String telephoneNumber, String residentialAddress,
                                 String email, Integer numberOfChildren, String hospitalName,
-                                String hospitalLocation, String hospitalCodeNo) {
+                                String hospitalLocation, String hospitalCodeNo,
+                                String title, String ninNumber, String organization_name) {
         this.phoneNumber = phoneNumber;
         this.enrollmentType = enrollmentType;
         this.currentStep = currentStep;
@@ -132,6 +142,9 @@ public class FormalFhisEnrollment {
         this.hospitalName = hospitalName;
         this.hospitalLocation = hospitalLocation;
         this.hospitalCodeNo = hospitalCodeNo;
+        this.ninNumber = ninNumber;
+        this.organizationName = organization_name;
+        this.title = title;
     }
 
     // Getters and Setters
@@ -216,9 +229,18 @@ public class FormalFhisEnrollment {
     public String getHospitalCodeNo() { return hospitalCodeNo; }
     public void setHospitalCodeNo(String hospitalCodeNo) { this.hospitalCodeNo = hospitalCodeNo; }
 
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+
+    public String getNinNumber() { return ninNumber; }
+    public void setNinNumber(String ninNumber) { this.ninNumber = ninNumber; }
+
+    public String getOrganizationname() { return organizationName; }
+    public void setOrganizationName(String OrganizationName) { this.organizationName = OrganizationName; }
+
     @Override
     public String toString() {
-        return "FormalFhisEnrollment{" +
+        return "FhisEnrollment{" +
                 "id=" + id +
                 ", phoneNumber='" + phoneNumber + '\'' +
                 ", enrollmentType='" + enrollmentType + '\'' +

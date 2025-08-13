@@ -4,13 +4,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
 import com.example.tems.Tems.Session.RedisConfig;
-import com.example.tems.Tems.model.InformalFhisEnrollment;
+import com.example.tems.Tems.model.FhisEnrollment;
 import com.example.tems.Tems.model.Organization;
-import com.example.tems.Tems.model.FormalFhisEnrollment;
-import com.example.tems.Tems.repository.FormalFhisEnrollmentRepository;
-import com.example.tems.Tems.repository.InformalFhisEnrollmentRepository;
+import com.example.tems.Tems.repository.FhisEnrollmentRepository;
 import com.example.tems.Tems.repository.OrganizationRepository;
 import com.example.tems.Tems.service.AggregatorService;
 import com.example.tems.Tems.service.SubscriptionService;
@@ -21,40 +18,34 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cglib.core.Local;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-public class UssdController {
+public class ussdcontroller {
 
     // FIXED: Renamed variable to follow camelCase convention
     private OrganizationRepository organizationRepository;
-    private AggregatorService aggregatorService;
-    private SubscriptionService subscriptionService;
-    private InformalFhisEnrollmentRepository InformalfhisEnrollmentRepository;
-    private FormalFhisEnrollmentRepository formalFhisEnrollmentRepository;
+    // private AggregatorService aggregatorService;
+    // private SubscriptionService subscriptionService;
+    private FhisEnrollmentRepository FhisEnrollmentRepository;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public UssdController(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService,
-            InformalFhisEnrollmentRepository InformalfhisEnrollmentRepository, FormalFhisEnrollmentRepository formalFhisEnrollmentRepository) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository) {
         this.organizationRepository = organizationRepository;
-        this.aggregatorService = aggregatorService;
-        this.subscriptionService = subscriptionService;
-        this.InformalfhisEnrollmentRepository = InformalfhisEnrollmentRepository;
-        this.formalFhisEnrollmentRepository = formalFhisEnrollmentRepository;
+        // this.aggregatorService = aggregatorService;
+        // this.subscriptionService = subscriptionService;
+        this.FhisEnrollmentRepository = FhisEnrollmentRepository;
     }
 
     @PostMapping(
@@ -87,11 +78,8 @@ public class UssdController {
 
         // Handle FHIS enrollment flow - this takes precedence over step-based flow
         if ("fhis_enrollment".equals(currentFlow)) {
-            return handleInformalFhisEnrollmentFlow(normalizedPhoneNumber, inputedText);
-        } else if ("formal_fhis_enrollment".equals(currentFlow)) {
-            return handleFormalFhisEnrollmentFlow(normalizedPhoneNumber, inputedText);
+            return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputText);
         }
-
         String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
         int step = parts.length;
         System.out.println("Main USSD Flow - Step: " + step + ", Input: " + inputedText);
@@ -121,8 +109,8 @@ public class UssdController {
         }
     }
     private static final int MAX_ORGANIZATIONS_PER_PAGE = 5;
-    private static final int SESSION_TIMEOUT_MINUTES = 10;
-    private static final int MIN_FHIS_NUMBER_LENGTH = 6;
+    // private static final int SESSION_TIMEOUT_MINUTES = 10;
+    // private static final int MIN_FHIS_NUMBER_LENGTH = 6;
 
     private String HandleLevel1(String phone, String[] parts, boolean isInitial) {
         if (isInitial) {
@@ -545,19 +533,6 @@ public class UssdController {
         }
     }
 
-    // Consider removing if resetUserSession is sufficient
-    private void clearSession(String phoneNumber) {
-        try {
-            String sessionkey = phoneNumber + ":";
-            Set<String> keys = redisTemplate.keys(sessionkey + "*");
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
-                System.out.println("Session cleared for phone: " + phoneNumber);
-            }
-        } catch (Exception e) {
-            System.err.println("Error clearing session: " + e.getMessage());
-        }
-    }
 
     // Add a method to completely reset user session when they want to start fresh
     private void resetUserSession(String phoneNumber) {
@@ -588,19 +563,15 @@ public class UssdController {
             String viewingDetails = (String) retrieveFromSession(phoneNumber, "viewingDetails");
             if ("true".equals(viewingDetails) && "0".equals(inputText)) {
                 saveToSession(phoneNumber, "viewingDetails", null);
-                // Go back to the existing enrollment menu
                 return checkExistingEnrollment(phoneNumber);
             }
-            // check for formal
-        
-            // Parse the input to get the last choice made
+    
             String lastChoice = "";
             if (inputText != null && !inputText.isEmpty()) {
                 String[] parts = inputText.split("\\*");
                 lastChoice = parts.length > 0 ? parts[parts.length - 1] : "";
             }
-
-            // Check for existing enrollment FIRST - but only on fresh entry (not when already handling choices)
+    
             String existingFlow = (String) retrieveFromSession(phoneNumber, "existingEnrollmentFlow");
             if (existingFlow == null) {
                 String existingCheck = checkExistingEnrollment(phoneNumber);
@@ -608,48 +579,48 @@ public class UssdController {
                     return existingCheck;
                 }
             }
-
-            // Get or create enrollment record
-            InformalFhisEnrollment enrollment = GetorCreateInformalFhisEnrollment(phoneNumber);
+    
+            // CRITICAL FIX: Try to get enrollment, if null, we're in sector selection
+            FhisEnrollment enrollment = GetorCreateFhisEnrollment(phoneNumber);
             if (enrollment == null) {
-                clearenrollmentSession(phoneNumber);
-                return "END Error retrieving enrollment. Please try again.";
+                // No enrollment exists, we should be in sector selection
+                System.out.println("No enrollment found, handling sector selection");
+                return handleSectorSelection(phoneNumber, lastChoice);
             }
-
+    
             String currentStep = enrollment.getCurrentStep();
             if (currentStep == null) {
                 enrollment.setCurrentStep("sector_selection");
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 currentStep = "sector_selection";
             }
-
+    
             System.out.println("Current Step: " + currentStep + ", Last Choice: " + lastChoice);
-            String currentField = (String) retrieveFromSession(phoneNumber, "currentField");
-            if (currentField == null && !currentStep.equals("sector_selection") && !currentStep.equals("completed")) {
-            currentField = determineCurrentFieldFromEnrollment(enrollment, currentStep);
-            if (currentField != null) {
-                saveToSession(phoneNumber, "currentField", currentField);
-                System.out.println("Set missing currentField to: " + currentField + " for step: " + currentStep);
-            }
-        }
-
-            // Check if we're waiting for a continuation choice
+            
             String continuationResult = handleContinuationChoice(phoneNumber, lastChoice, enrollment);
             if (continuationResult != null) {
                 return continuationResult;
             }
-
+    
             if (currentStep.equals("sector_selection")) {
                 return handleSectorSelection(phoneNumber, lastChoice);
             }
-
+    
             switch (currentStep) {
                 case "personal_data":
                     return handlePersonalData(phoneNumber, lastChoice, enrollment);
                 case "social_data":
                     return handleSocialData(phoneNumber, lastChoice, enrollment);
+                case "social_data_formal":
+                    return handleFormalSocialData(phoneNumber, inputText, enrollment);
                 case "corporate_data":
                     return handleCorporateData(phoneNumber, lastChoice, enrollment);
+                case "professional_data":
+                    return handleProfessionalData(phoneNumber, lastChoice, enrollment);
+                case "dependants_data":
+                    return handleDependantsData(phoneNumber, inputText, enrollment);
+                case "healthcare_provider_data":
+                    return handleHealthcareProviderData(phoneNumber, inputText, enrollment);
                 case "completed":
                     return HandleEnrollmentCompletion(phoneNumber, lastChoice, enrollment);
                 default:
@@ -658,563 +629,72 @@ public class UssdController {
             }
         } catch (Exception e) {
             System.err.println("Error in FHIS enrollment flow: " + e.getMessage());
+            e.printStackTrace(); // Added stack trace for debugging
             clearenrollmentSession(phoneNumber);
             return "END An error occurred. Please try again.";
         }
     }
-    private String handleFormalFhisEnrollmentFlow(String phoneNumber, String inputText) {
-        System.out.println("FORMAL FHIS Enrollment Flow - Phone: " + phoneNumber + ", Input: " + inputText);
     
-        // CRITICAL FIX: Extract only the last choice from the input
-        String lastChoice = "";
-        if (inputText != null && !inputText.isEmpty()) {
-            String[] parts = inputText.split("\\*");
-            lastChoice = parts.length > 0 ? parts[parts.length - 1] : "";
-        }
     
-        if ("0".equals(lastChoice)) {
-            clearenrollmentSession(phoneNumber);
-            resetUserSession(phoneNumber);
-            return HandleLevel1(phoneNumber, new String[0], true);
-        }
     
-        String existingCheck = checkExistingFormalEnrollment(phoneNumber);
-        if (existingCheck != null) {
-            return existingCheck;
-        }
     
-        FormalFhisEnrollment enrollment = GetorCreateFormalFhisEnrollment(phoneNumber);
-        if (enrollment == null) {
-            clearenrollmentSession(phoneNumber);
-            return "END Error retrieving enrollment. Please try again.";
-        }
-    
-        String currentStep = enrollment.getCurrentStep();
-        if (currentStep == null) {
-            enrollment.setCurrentStep("personal_data");
-            formalFhisEnrollmentRepository.save(enrollment);
-            currentStep = "personal_data";
-        }
-    
-        String currentField = (String) retrieveFromSession(phoneNumber, "currentField");
-        if (currentField == null && !"completed".equals(currentStep)) {
-            currentField = determineCurrentFieldFromFormalEnrollment(enrollment, currentStep);
-            if (currentField != null) {
-                saveToSession(phoneNumber, "currentField", currentField);
-            }
-        }
-    
-        // CRITICAL FIX: Use lastChoice instead of inputText
-        String continuationResult = handleFormalContinuationChoice(phoneNumber, lastChoice, enrollment);
-        if (continuationResult != null) {
-            return continuationResult;
-        }
-    
-        try {
-            return switch (currentStep) {
-                case "personal_data" -> handleFormalPersonalData(phoneNumber, lastChoice, enrollment);
-                case "professional_data" -> handleFormalProfessionalData(phoneNumber, lastChoice, enrollment);
-                case "social_data" -> handleFormalSocialData(phoneNumber, lastChoice, enrollment);
-                case "dependants_data" -> handleFormalDependantsData(phoneNumber, lastChoice, enrollment);
-                case "healthcare_data" -> handleFormalHealthcareData(phoneNumber, lastChoice, enrollment);
-                case "completed" -> handleFormalEnrollmentCompletion(phoneNumber, lastChoice, enrollment);
-                default -> "END Invalid step. Please restart.";
-            };
-        } catch (Exception e) {
-            System.err.println("Error in Formal FHIS flow: " + e.getMessage());
-            e.printStackTrace();
-            clearenrollmentSession(phoneNumber);
-            return "END An error occurred. Please try again.";
-        }
-    }
-    private String checkExistingFormalEnrollment(String phoneNumber) {
-        try {
-            Optional<FormalFhisEnrollment> existing = formalFhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
-            if (existing.isPresent()) {
-                FormalFhisEnrollment enrollment = existing.get();
-                String currentStep = enrollment.getCurrentStep();
 
-                if ("completed".equals(currentStep)) {
-                    saveToSession(phoneNumber, "existingEnrollmentFlow", "completed");
-                    return "CON You already have a completed Formal FHIS enrollment.\n" +
-                            "Name: " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
-                            "FHIS No: " + enrollment.getFhisNo() + "\n" +
-                            "1. Continue\n" +
-                            "2. Start Fresh\n" +
-                            "0. Back to menu";
-                } else if (currentStep != null) {
-                    saveToSession(phoneNumber, "existingEnrollmentFlow", "incomplete");
-                    return "CON Existing Formal enrollment found (Incomplete).\n" +
-                            "Progress: " + getProgressPercentage(currentStep) + "%\n" +
-                            "1. Continue\n" +
-                            "2. Start Fresh\n" +
-                            "0. Back to menu";
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Error checking existing formal enrollment: " + e.getMessage());
-        }
-        return null;
-    }
-    private String handleExistingFormalEnrollmentChoice(String phone, String choice) {
-        try {
-            Optional<FormalFhisEnrollment> existing = formalFhisEnrollmentRepository.findByPhoneNumber(phone);
-            if (!existing.isPresent()) {
-                clearenrollmentSession(phone);
-                return "END Enrollment not found.";
-            }
-            FormalFhisEnrollment enrollment = existing.get();
-            String existingFlow = (String) retrieveFromSession(phone, "existingEnrollmentFlow");
-    
-            switch (choice) {
-                case "1": // Continue or restart
-                    if ("completed".equals(existingFlow)) {
-                        // Delete and restart for completed enrollment
-                        formalFhisEnrollmentRepository.delete(enrollment);
-                        clearenrollmentSession(phone);
-                        return "CON FHIS Enrollment Started\n" +
-                                "Select enrollment type:\n" +
-                                "1. Informal Sector\n" +
-                                "2. Formal Sector\n" +
-                                "0. Back to menu";
-                    } else {
-                        // Resume incomplete enrollment
-                        saveToSession(phone, "currentField", determineCurrentFieldFromFormalEnrollment(enrollment, enrollment.getCurrentStep()));
-                        return resumeFormalEnrollmentStep(enrollment);
-                    }
-                case "2": // View or start fresh
-                    if ("completed".equals(existingFlow)) {
-                        saveToSession(phone, "viewingDetails", "true");
-                        saveToSession(phone, "existingFormalEnrollmentHandled", true);
-                        return "CON Enrollment Details:\n" +
-                                "Name: " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
-                                "FHIS: " + enrollment.getFhisNo() + "\n" +
-                                "Type: " + enrollment.getEnrollmentType() + "\n" +
-                                "0. Back to menu";
-                    } else {
-                        // CRITICAL FIX: Delete existing and start fresh for incomplete enrollment
-                        formalFhisEnrollmentRepository.delete(enrollment);
-                        clearenrollmentSession(phone);
-                        
-                        // Create new enrollment and start immediately
-                        FormalFhisEnrollment newEnrollment = new FormalFhisEnrollment();
-                        newEnrollment.setPhoneNumber(phone);
-                        newEnrollment.setEnrollmentType("Formal");
-                        newEnrollment.setCurrentStep("personal_data");
-                        newEnrollment.setCreatedAt(LocalDateTime.now());
-                        newEnrollment.setUpdatedAt(LocalDateTime.now());
-                        formalFhisEnrollmentRepository.save(newEnrollment);
-                        
-                        saveToSession(phone, "currentField", "fhisNo");
-                        return "CON FORMAL SECTOR - Fresh Start\n" +
-                                "Enter your FHIS Number:";
-                    }
-                case "0":
-                    clearenrollmentSession(phone);
-                    resetUserSession(phone);
-                    return HandleLevel1(phone, new String[0], true);
-                default:
-                    return "CON Invalid choice.\n1. Continue\n2. Start fresh\n0. Back";
-            }
-        } catch (Exception e) {
-            System.err.println("Error handling existing formal choice: " + e.getMessage());
-            return "END Error. Please try again.";
-        }
-    }
-    private String handleFormalPersonalData(String phone, String inputText, FormalFhisEnrollment enrollment) {
-        String currentField = (String) retrieveFromSession(phone, "currentField");
-        if (currentField == null) {
-            currentField = determineCurrentFieldFromFormalEnrollment(enrollment, "personal_data");
-            if (currentField == null) return moveToFormalNextStage(phone, enrollment);
-            saveToSession(phone, "currentField", currentField);
-        }
-    
-        if ((inputText == null || inputText.trim().isEmpty()) && !"middleName".equals(currentField)) {
-            return "CON Enter " + getFieldDisplayName(currentField) + ":";
-        }
-    
-        switch (currentField) {
-            case "fhisNo":
-                if (!isValidFhisNumber(inputText.trim())) {
-                    return "CON Invalid FHIS Number. Try again:";
-                }
-                enrollment.setFhisNo(inputText.trim());
-                saveToSession(phone, "currentField", "surname");
-                break;
-            case "surname":
-                if (!isValidName(inputText.trim())) return "CON Invalid surname:";
-                enrollment.setSurname(inputText.trim());
-                saveToSession(phone, "currentField", "firstName");
-                break;
-            case "firstName":
-                if (!isValidName(inputText.trim())) return "CON Invalid first name:";
-                enrollment.setFirstName(inputText.trim());
-                saveToSession(phone, "currentField", "middleName");
-                break;
-            case "middleName":
-                enrollment.setMiddleName(inputText != null ? inputText.trim() : "");
-                saveToSession(phone, "currentField", "dateOfBirth");
-                break;
-            case "dateOfBirth":
-                if (!isValidDateOfBirth(inputText)) return "CON Invalid date (YYYY-MM-DD):";
-                enrollment.setDateOfBirth(inputText);
-                saveToSession(phone, "currentField", "sex");
-                break;
-            case "sex":
-                String upperSex = inputText.trim().toUpperCase();
-                if (!"M".equals(upperSex) && !"F".equals(upperSex)) return "CON Sex: M or F:";
-                enrollment.setSex(upperSex);
-                saveToSession(phone, "currentField", "bloodGroup");
-                break;
-            case "bloodGroup":
-                if (!isValidBloodGroup(inputText.trim())) return "CON Invalid blood group:";
-                enrollment.setBloodGroup(inputText.trim());
-                enrollment.setCurrentStep("professional_data");
-                formalFhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "designation");
-                saveToSession(phone, "waitingForContinue", true);
-                return "CON Personal data saved.\n1. Continue to Professional Data\n0. Back";
-        }
-    
-        formalFhisEnrollmentRepository.save(enrollment);
-        return "CON Enter " + getFieldDisplayName(currentField) + ":";
-    }
-    private String handleFormalProfessionalData(String phone, String inputText, FormalFhisEnrollment enrollment) {
-        String currentField = (String) retrieveFromSession(phone, "currentField");
-        if (currentField == null) {
-            currentField = determineCurrentFieldFromFormalEnrollment(enrollment, "professional_data");
-            if (currentField == null) return moveToFormalNextStage(phone, enrollment);
-            saveToSession(phone, "currentField", currentField);
-        }
-    
-        if (inputText == null || inputText.trim().isEmpty()) {
-            return "CON Enter " + getFieldDisplayName(currentField) + ":";
-        }
-    
-        switch (currentField) {
-            case "designation": enrollment.setDesignation(inputText.trim()); saveToSession(phone, "currentField", "occupation"); break;
-            case "occupation": enrollment.setOccupation(inputText.trim()); saveToSession(phone, "currentField", "presentStation"); break;
-            case "presentStation": enrollment.setPresentStation(inputText.trim()); saveToSession(phone, "currentField", "rank"); break;
-            case "rank": enrollment.setRank(inputText.trim()); saveToSession(phone, "currentField", "pfNumber"); break;
-            case "pfNumber": enrollment.setPfNumber(inputText.trim()); saveToSession(phone, "currentField", "sdaName"); break;
-            case "sdaName":
-                enrollment.setSdaName(inputText.trim());
-                enrollment.setCurrentStep("social_data");
-                formalFhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "maritalStatus");
-                saveToSession(phone, "waitingForContinue", true);
-                return "CON Professional data saved.\n1. Continue to Social Data\n0. Back";
-        }
-    
-        formalFhisEnrollmentRepository.save(enrollment);
-        return "CON Enter " + getFieldDisplayName(currentField) + ":";
-    }
-    private String handleFormalSocialData(String phone, String inputText, FormalFhisEnrollment enrollment) {
-        String currentField = (String) retrieveFromSession(phone, "currentField");
-        if (currentField == null) {
-            currentField = determineCurrentFieldFromFormalEnrollment(enrollment, "social_data");
-            if (currentField == null) return moveToFormalNextStage(phone, enrollment);
-            saveToSession(phone, "currentField", currentField);
-        }
-    
-        if (inputText == null || inputText.trim().isEmpty()) {
-            return "CON Enter " + getFieldDisplayName(currentField) + ":";
-        }
-    
-        switch (currentField) {
-            case "maritalStatus": 
-                if (!isValidMaritalStatus(inputText.trim())) return "CON Invalid status (Single, Married, etc):";
-                enrollment.setMaritalStatus(inputText.trim());
-                saveToSession(phone, "currentField", "telephoneNumber");
-                break;
-            case "telephoneNumber":
-                if (!isValidPhoneNumber(inputText.trim())) return "CON Invalid phone number:";
-                enrollment.setTelephoneNumber(inputText.trim());
-                saveToSession(phone, "currentField", "residentialAddress");
-                break;
-            case "residentialAddress":
-                enrollment.setResidentialAddress(inputText.trim());
-                saveToSession(phone, "currentField", "email");
-                break;
-            case "email":
-                if (!isValidEmail(inputText.trim())) return "CON Invalid email:";
-                enrollment.setEmail(inputText.trim());
-                enrollment.setCurrentStep("dependants_data");
-                formalFhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "spouseFirstName");
-                saveToSession(phone, "waitingForContinue", true);
-                return "CON Social data saved.\n1. Continue to Dependants\n0. Back";
-        }
-    
-        formalFhisEnrollmentRepository.save(enrollment);
-        return "CON Enter " + getFieldDisplayName(currentField) + ":";
-    }
-    private String handleFormalDependantsData(String phone, String inputText, FormalFhisEnrollment enrollment) {
-        String currentField = (String) retrieveFromSession(phone, "currentField");
-        if (currentField == null) {
-            currentField = determineCurrentFieldFromFormalEnrollment(enrollment, "dependants_data");
-            if (currentField == null) return moveToFormalNextStage(phone, enrollment);
-            saveToSession(phone, "currentField", currentField);
-        }
-    
-        if (inputText == null || inputText.trim().isEmpty()) {
-            return "CON Enter " + getFieldDisplayName(currentField) + ":";
-        }
-    
-        switch (currentField) {
-            case "spouseFirstName": enrollment.setSpouseFirstName(inputText.trim()); saveToSession(phone, "currentField", "spouseSex"); break;
-            case "spouseSex": 
-                String sex = inputText.trim().toUpperCase(); 
-                if (!"M".equals(sex) && !"F".equals(sex)) return "CON M or F only:"; 
-                enrollment.setSpouseSex(sex); 
-                saveToSession(phone, "currentField", "spouseBloodGroup"); 
-                break;
-            case "spouseBloodGroup": enrollment.setSpouseBloodGroup(inputText.trim()); saveToSession(phone, "currentField", "spouseDateOfBirth"); break;
-            case "spouseDateOfBirth": 
-                if (!isValidDateOfBirth(inputText)) return "CON YYYY-MM-DD:"; 
-                enrollment.setSpouseDateOfBirth(inputText); 
-                saveToSession(phone, "currentField", "child1FirstName"); 
-                break;
-            // Repeat for child1 to child4 (same pattern)
-            case "child1FirstName": enrollment.setChild1FirstName(inputText.trim()); saveToSession(phone, "currentField", "child1Sex"); break;
-            case "child1Sex": 
-                String c1sex = inputText.trim().toUpperCase(); 
-                if (!"M".equals(c1sex) && !"F".equals(c1sex)) return "CON M or F:"; 
-                enrollment.setChild1Sex(c1sex); 
-                saveToSession(phone, "currentField", "child1BloodGroup"); 
-                break;
-            case "child1BloodGroup": enrollment.setChild1BloodGroup(inputText.trim()); saveToSession(phone, "currentField", "child1DateOfBirth"); break;
-            case "child1DateOfBirth": 
-                if (!isValidDateOfBirth(inputText)) return "CON YYYY-MM-DD:"; 
-                enrollment.setChild1DateOfBirth(inputText); 
-                saveToSession(phone, "currentField", "child2FirstName"); 
-                break;
-            // child2
-            case "child2FirstName": enrollment.setChild2FirstName(inputText.trim()); saveToSession(phone, "currentField", "child2Sex"); break;
-            case "child2Sex": 
-                String c2sex = inputText.trim().toUpperCase(); 
-                if (!"M".equals(c2sex) && !"F".equals(c2sex)) return "CON M or F:"; 
-                enrollment.setChild2Sex(c2sex); 
-                saveToSession(phone, "currentField", "child2BloodGroup"); 
-                break;
-            case "child2BloodGroup": enrollment.setChild2BloodGroup(inputText.trim()); saveToSession(phone, "currentField", "child2DateOfBirth"); break;
-            case "child2DateOfBirth": 
-                if (!isValidDateOfBirth(inputText)) return "CON YYYY-MM-DD:"; 
-                enrollment.setChild2DateOfBirth(inputText); 
-                saveToSession(phone, "currentField", "child3FirstName"); 
-                break;
-            // child3
-            case "child3FirstName": enrollment.setChild3FirstName(inputText.trim()); saveToSession(phone, "currentField", "child3Sex"); break;
-            case "child3Sex": 
-                String c3sex = inputText.trim().toUpperCase(); 
-                if (!"M".equals(c3sex) && !"F".equals(c3sex)) return "CON M or F:"; 
-                enrollment.setChild3Sex(c3sex); 
-                saveToSession(phone, "currentField", "child3BloodGroup"); 
-                break;
-            case "child3BloodGroup": enrollment.setChild3BloodGroup(inputText.trim()); saveToSession(phone, "currentField", "child3DateOfBirth"); break;
-            case "child3DateOfBirth": 
-                if (!isValidDateOfBirth(inputText)) return "CON YYYY-MM-DD:"; 
-                enrollment.setChild3DateOfBirth(inputText); 
-                saveToSession(phone, "currentField", "child4FirstName"); 
-                break;
-            // child4
-            case "child4FirstName": enrollment.setChild4FirstName(inputText.trim()); saveToSession(phone, "currentField", "child4Sex"); break;
-            case "child4Sex": 
-                String c4sex = inputText.trim().toUpperCase(); 
-                if (!"M".equals(c4sex) && !"F".equals(c4sex)) return "CON M or F:"; 
-                enrollment.setChild4Sex(c4sex); 
-                saveToSession(phone, "currentField", "child4BloodGroup"); 
-                break;
-            case "child4BloodGroup": enrollment.setChild4BloodGroup(inputText.trim()); saveToSession(phone, "currentField", "child4DateOfBirth"); break;
-            case "child4DateOfBirth": 
-                if (!isValidDateOfBirth(inputText)) return "CON YYYY-MM-DD:"; 
-                enrollment.setChild4DateOfBirth(inputText); 
-                enrollment.setCurrentStep("healthcare_data");
-                formalFhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "hospitalName");
-                saveToSession(phone, "waitingForContinue", true);
-                return "CON Dependants saved.\n1. Continue to Healthcare Provider\n0. Back";
-        }
-    
-        formalFhisEnrollmentRepository.save(enrollment);
-        return "CON Enter " + getFieldDisplayName(currentField) + ":";
-    }
-    private String handleFormalHealthcareData(String phone, String inputText, FormalFhisEnrollment enrollment) {
-        String currentField = (String) retrieveFromSession(phone, "currentField");
-        if (currentField == null) {
-            currentField = determineCurrentFieldFromFormalEnrollment(enrollment, "healthcare_data");
-            if (currentField == null) return moveToFormalNextStage(phone, enrollment);
-            saveToSession(phone, "currentField", currentField);
-        }
-    
-        if (inputText == null || inputText.trim().isEmpty()) {
-            return "CON Enter " + getFieldDisplayName(currentField) + ":";
-        }
-    
-        switch (currentField) {
-            case "hospitalName": enrollment.setHospitalName(inputText.trim()); saveToSession(phone, "currentField", "hospitalLocation"); break;
-            case "hospitalLocation": enrollment.setHospitalLocation(inputText.trim()); saveToSession(phone, "currentField", "hospitalCodeNo"); break;
-            case "hospitalCodeNo": 
-                enrollment.setHospitalCodeNo(inputText.trim());
-                enrollment.setCurrentStep("completed");
-                formalFhisEnrollmentRepository.save(enrollment);
-                return "CON Almost done!\n" + showFormalEnrollmentSummary(enrollment) + 
-                       "\n1. Confirm\n2. Edit\n0. Cancel";
-        }
-    
-        formalFhisEnrollmentRepository.save(enrollment);
-        return "CON Enter " + getFieldDisplayName(currentField) + ":";
-    }
-    private String moveToFormalNextStage(String phone, FormalFhisEnrollment enrollment) {
-        switch (enrollment.getCurrentStep()) {
-            case "personal_data":
-                enrollment.setCurrentStep("professional_data");
-                saveToSession(phone, "currentField", "designation");
-                break;
-            case "professional_data":
-                enrollment.setCurrentStep("social_data");
-                saveToSession(phone, "currentField", "maritalStatus");
-                break;
-            case "social_data":
-                enrollment.setCurrentStep("dependants_data");
-                saveToSession(phone, "currentField", "spouseFirstName");
-                break;
-            case "dependants_data":
-                enrollment.setCurrentStep("healthcare_data");
-                saveToSession(phone, "currentField", "hospitalName");
-                break;
-            case "healthcare_data":
-                enrollment.setCurrentStep("completed");
-                enrollment.setUpdatedAt(LocalDateTime.now());
-                break;
-        }
-        formalFhisEnrollmentRepository.save(enrollment);
-        saveToSession(phone, "waitingForContinue", true);
-        return "CON Data saved.\n1. Continue\n0. Back";
-    }
-    private String handleFormalContinuationChoice(String phone, String choice, FormalFhisEnrollment enrollment) {
-        Boolean waiting = (Boolean) retrieveFromSession(phone, "waitingForContinue");
-        if (Boolean.TRUE.equals(waiting)) {
-            saveToSession(phone, "waitingForContinue", false);
-            if ("1".equals(choice)) {
-                return promptForNextField((String) retrieveFromSession(phone, "currentField"));
-            } else if ("0".equals(choice)) {
-                clearenrollmentSession(phone);
-                resetUserSession(phone);
-                return HandleLevel1(phone, new String[0], true);
-            } else {
-                return "CON Invalid. 1 to continue, 0 to back.";
-            }
-        }
-        return null;
-    }
-    private String handleFormalEnrollmentCompletion(String phone, String choice, FormalFhisEnrollment enrollment) {
-        switch (choice) {
-            case "1":
-                enrollment.setCurrentStep("completed");
-                formalFhisEnrollmentRepository.save(enrollment);
-                clearenrollmentSession(phone);
-                return "END Enrollment successful! Ref: " + enrollment.getFhisNo();
-            case "2":
-                enrollment.setCurrentStep("personal_data");
-                formalFhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "fhisNo");
-                return "CON EDIT MODE - Enter FHIS No:";
-            case "0":
-                clearenrollmentSession(phone);
-                resetUserSession(phone);
-                return HandleLevel1(phone, new String[0], true);
-            default:
-                return "CON 1. Confirm\n2. Edit\n0. Cancel";
-        }
-    }
-    private String showFormalEnrollmentSummary(FormalFhisEnrollment enrollment) {
-        return "REVIEW:\n" +
-                "Name: " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
-                "FHIS: " + enrollment.getFhisNo() + "\n" +
-                "Email: " + enrollment.getEmail() + "\n" +
-                "Phone: " + enrollment.getTelephoneNumber();
-    }
-
-    private String determineCurrentFieldFromEnrollment(InformalFhisEnrollment enrollment, String currentStep) {
+    private String determineCurrentFieldFromEnrollment(FhisEnrollment enrollment, String currentStep) {
         switch (currentStep) {
             case "personal_data":
                 if (enrollment.getFhisNo() == null) return "fhisNo";
-                if (enrollment.getTitle() == null) return "title";
+                if ("Informal".equals(enrollment.getEnrollmentType()) && enrollment.getTitle() == null) return "title";
                 if (enrollment.getSurname() == null) return "surname";
                 if (enrollment.getFirstName() == null) return "firstName";
                 if (enrollment.getMiddleName() == null) return "middleName";
                 if (enrollment.getDateOfBirth() == null) return "dateOfBirth";
+                if ("Formal".equals(enrollment.getEnrollmentType()) && enrollment.getSex() == null) return "sex";
+                if (enrollment.getBloodGroup() == null) return "bloodGroup";
                 break;
                 
             case "social_data":
+                // For Informal sector
                 if (enrollment.getMaritalStatus() == null) return "maritalStatus";
                 if (enrollment.getEmail() == null) return "email";
-                if (enrollment.getBloodGroup() == null) return "bloodGroup";
+                if ("Informal".equals(enrollment.getEnrollmentType()) && enrollment.getBloodGroup() == null) return "bloodGroup";
                 if (enrollment.getResidentialAddress() == null) return "residentialAddress";
-                if (enrollment.getOccupation() == null) return "occupation";
+                if ("Informal".equals(enrollment.getEnrollmentType()) && enrollment.getOccupation() == null) return "occupation";
+                break;
+                
+            case "social_data_formal":
+                // For Formal sector - different order
+                if (enrollment.getMaritalStatus() == null) return "maritalStatus";
+                if (enrollment.getTelephoneNumber() == null) return "telephoneNumber";
+                if (enrollment.getResidentialAddress() == null) return "residentialAddress";
+                if (enrollment.getEmail() == null) return "email";
                 break;
                 
             case "corporate_data":
-                if (enrollment.getNinNumber() == null) return "ninNumber";
-                if (enrollment.getTelephoneNumber() == null) return "telephoneNumber";
-                if (enrollment.getOrganizationName() == null) return "organizationName";
-                break;
-        }
-        return null;
-    }
-    private String determineCurrentFieldFromFormalEnrollment(FormalFhisEnrollment enrollment, String currentStep) {
-        switch (currentStep) {
-            case "personal_data":
-                if (enrollment.getFhisNo() == null) return "fhisNo";
-                if (enrollment.getSurname() == null) return "surname";
-                if (enrollment.getFirstName() == null) return "firstName";
-                if (enrollment.getMiddleName() == null) return "middleName";
-                if (enrollment.getDateOfBirth() == null) return "dateOfBirth";
-                if (enrollment.getSex() == null) return "sex";
-                if (enrollment.getBloodGroup() == null) return "bloodGroup";
+                // Only for Informal
+                if ("Informal".equals(enrollment.getEnrollmentType())) {
+                    if (enrollment.getNinNumber() == null) return "ninNumber";
+                    if (enrollment.getTelephoneNumber() == null) return "telephoneNumber";
+                    if (enrollment.getOrganizationname() == null) return "organizationName";
+                }
                 break;
                 
             case "professional_data":
-                if (enrollment.getDesignation() == null) return "designation";
-                if (enrollment.getOccupation() == null) return "occupation";
-                if (enrollment.getPresentStation() == null) return "presentStation";
-                if (enrollment.getRank() == null) return "rank";
-                if (enrollment.getPfNumber() == null) return "pfNumber";
-                if (enrollment.getSdaName() == null) return "sdaName";
-                break;
-                
-            case "social_data":
-                if (enrollment.getMaritalStatus() == null) return "maritalStatus";
-                if (enrollment.getTelephoneNumber() == null) return "telephoneNumber";
-                if (enrollment.getResidentialAddress() == null) return "residentialAddress";
-                if (enrollment.getEmail() == null) return "email";
+                // Only for Formal
+                if ("Formal".equals(enrollment.getEnrollmentType())) {
+                    if (enrollment.getDesignation() == null) return "designation";
+                    if (enrollment.getOccupation() == null) return "occupation";
+                    if (enrollment.getPresentStation() == null) return "presentStation";
+                    if (enrollment.getRank() == null) return "rank";
+                    if (enrollment.getPfNumber() == null) return "pfNumber";
+                    if (enrollment.getSdaName() == null) return "sdaName";
+                }
                 break;
                 
             case "dependants_data":
-                if (enrollment.getSpouseFirstName() == null) return "spouseFirstName";
-                if (enrollment.getSpouseSex() == null) return "spouseSex";
-                if (enrollment.getSpouseBloodGroup() == null) return "spouseBloodGroup";
-                if (enrollment.getSpouseDateOfBirth() == null) return "spouseDateOfBirth";
-                if (enrollment.getChild1FirstName() == null) return "child1FirstName";
-                if (enrollment.getChild1Sex() == null) return "child1Sex";
-                if (enrollment.getChild1BloodGroup() == null) return "child1BloodGroup";
-                if (enrollment.getChild1DateOfBirth() == null) return "child1DateOfBirth";
-                if (enrollment.getChild2FirstName() == null) return "child2FirstName";
-                if (enrollment.getChild2Sex() == null) return "child2Sex";
-                if (enrollment.getChild2BloodGroup() == null) return "child2BloodGroup";
-                if (enrollment.getChild2DateOfBirth() == null) return "child2DateOfBirth";
-                if (enrollment.getChild3FirstName() == null) return "child3FirstName";
-                if (enrollment.getChild3Sex() == null) return "child3Sex";
-                if (enrollment.getChild3BloodGroup() == null) return "child3BloodGroup";
-                if (enrollment.getChild3DateOfBirth() == null) return "child3DateOfBirth";
-                if (enrollment.getChild4FirstName() == null) return "child4FirstName";
-                if (enrollment.getChild4Sex() == null) return "child4Sex";
-                if (enrollment.getChild4BloodGroup() == null) return "child4BloodGroup";
-                if (enrollment.getChild4DateOfBirth() == null) return "child4DateOfBirth";
+                if (enrollment.getNumberOfChildren() == null) return "numberOfChildren";
                 break;
                 
-            case "healthcare_data":
+            case "healthcare_provider_data":
                 if (enrollment.getHospitalName() == null) return "hospitalName";
                 if (enrollment.getHospitalLocation() == null) return "hospitalLocation";
                 if (enrollment.getHospitalCodeNo() == null) return "hospitalCodeNo";
@@ -1222,92 +702,12 @@ public class UssdController {
         }
         return null;
     }
-
-    private String handleInformalFhisEnrollmentFlow(String phoneNumber, String inputText) {
-        System.out.println("Informal FHIS Enrollment Flow - Phone: " + phoneNumber + ", Input: " + inputText);
-        try {
-            // Check if user has an existing enrollment
-            String handlingExisting = (String) retrieveFromSession(phoneNumber, "handlingExistingEnrollment");
-            if (handlingExisting == null) {
-                String existingCheck = checkExistingEnrollment(phoneNumber);
-                if (existingCheck != null) {
-                    return existingCheck; // Show "Continue or Start Fresh" only once
-                }
-            }
-            // Once past this point, mark that we're handling it
-            saveToSession(phoneNumber, "handlingExistingEnrollment", "true");
-    
-            // Get or create enrollment record
-            InformalFhisEnrollment enrollment = GetorCreateInformalFhisEnrollment(phoneNumber);
-            if (enrollment == null) {
-                System.err.println("Failed to get or create informal enrollment for phone: " + phoneNumber);
-                clearenrollmentSession(phoneNumber);
-                resetUserSession(phoneNumber);
-                return "END Error creating enrollment. Please try again.";
-            }
-    
-            String currentStep = enrollment.getCurrentStep();
-            if (currentStep == null) {
-                enrollment.setCurrentStep("personal_data"); // Default to personal_data, not sector_selection
-                InformalfhisEnrollmentRepository.save(enrollment);
-                currentStep = "personal_data";
-            }
-    
-            // CRITICAL FIX: Extract only the last choice from the input
-            String lastChoice = "";
-            if (inputText != null && !inputText.isEmpty()) {
-                String[] parts = inputText.split("\\*");
-                lastChoice = parts.length > 0 ? parts[parts.length - 1] : "";
-            }
-            
-            System.out.println("Current Step: " + currentStep + ", Last Choice: " + lastChoice);
-            
-            String currentField = (String) retrieveFromSession(phoneNumber, "currentField");
-            if (currentField == null && !currentStep.equals("sector_selection") && !currentStep.equals("completed")) {
-                currentField = determineCurrentFieldFromEnrollment(enrollment, currentStep);
-                if (currentField != null) {
-                    saveToSession(phoneNumber, "currentField", currentField);
-                    System.out.println("Set missing currentField to: " + currentField + " for step: " + currentStep);
-                }
-            }
-    
-            // Check if we're waiting for a continuation choice
-            String continuationResult = handleContinuationChoice(phoneNumber, lastChoice, enrollment);
-            if (continuationResult != null) {
-                return continuationResult;
-            }
-    
-            if (currentStep.equals("sector_selection")) {
-                // CRITICAL FIX: Pass only the last choice, not the full input
-                return handleSectorSelection(phoneNumber, lastChoice);
-            }
-    
-            switch (currentStep) {
-                case "personal_data":
-                    return handlePersonalData(phoneNumber, lastChoice, enrollment);
-                case "social_data":
-                    return handleSocialData(phoneNumber, lastChoice, enrollment);
-                case "corporate_data":
-                    return handleCorporateData(phoneNumber, lastChoice, enrollment);
-                case "completed":
-                    return HandleEnrollmentCompletion(phoneNumber, lastChoice, enrollment);
-                default:
-                    clearenrollmentSession(phoneNumber);
-                    return "END Invalid enrollment step. Please start over.";
-            }
-        } catch (Exception e) {
-            System.err.println("Error in Informal FHIS enrollment flow: " + e.getMessage());
-            e.printStackTrace();
-            clearenrollmentSession(phoneNumber);
-            return "END An error occurred. Please try again.";
-        }
-    }
-
+   
     private String checkExistingEnrollment(String phoneNumber) {
         try {
-            Optional<InformalFhisEnrollment> existing = InformalfhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
+            Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
             if (existing.isPresent()) {
-                InformalFhisEnrollment enrollment = existing.get();
+                FhisEnrollment enrollment = existing.get();
                 String currentStep = enrollment.getCurrentStep();
     
                 // Skip if already handling
@@ -1365,26 +765,21 @@ public class UssdController {
         choice = choice != null ? choice.trim() : "";
         System.out.println("Cleaned choice: '" + choice + "'");
         
-        // CRITICAL FIX: Check if we're already handling existing enrollment
+        // Check if we're already handling existing enrollment
         String handlingExisting = (String) retrieveFromSession(phone, "handlingExistingEnrollment");
         
         // If we're NOT already handling existing enrollment, check for existing enrollments first
         if (!"true".equals(handlingExisting)) {
             try {
-                Optional<InformalFhisEnrollment> existingInformal = InformalfhisEnrollmentRepository.findByPhoneNumber(phone);
-                Optional<FormalFhisEnrollment> existingFormal = formalFhisEnrollmentRepository.findByPhoneNumber(phone);
+                Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(phone);
                 
-                boolean hasInformal = existingInformal.isPresent();
-                boolean hasFormal = existingFormal.isPresent();
-                
-                System.out.println("Has Informal: " + hasInformal + ", Has Formal: " + hasFormal);
-                
-                // If user has existing enrollment, handle that flow
-                if (hasInformal || hasFormal) {
+                if (existing.isPresent()) {
+                    System.out.println("Found existing enrollment, handling choice");
                     return handleExistingEnrollmentChoice(phone, choice);
                 }
             } catch (Exception e) {
                 System.err.println("Error checking existing enrollments: " + e.getMessage());
+                e.printStackTrace();
             }
         }
         
@@ -1392,35 +787,11 @@ public class UssdController {
         switch (choice) {
             case "1":
                 System.out.println("Creating new Informal enrollment");
-                InformalFhisEnrollment informalEnrollment = new InformalFhisEnrollment();
-                informalEnrollment.setPhoneNumber(phone);
-                informalEnrollment.setEnrollmentType("Informal");
-                informalEnrollment.setCurrentStep("personal_data"); // Skip sector_selection step
-                informalEnrollment.setCreatedAt(LocalDateTime.now());
-                informalEnrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(informalEnrollment);
-                
-                saveToSession(phone, "currentFlow", "fhis_enrollment");
-                saveToSession(phone, "currentField", "fhisNo");
-                saveToSession(phone, "handlingExistingEnrollment", "true");
-                
-                return "CON INFORMAL SECTOR\nEnter your FHIS Number:";
+                return createNewEnrollment(phone, "Informal");
                 
             case "2":
                 System.out.println("Creating new Formal enrollment");
-                FormalFhisEnrollment formalEnrollment = new FormalFhisEnrollment();
-                formalEnrollment.setPhoneNumber(phone);
-                formalEnrollment.setEnrollmentType("Formal");
-                formalEnrollment.setCurrentStep("personal_data"); // Skip sector_selection step
-                formalEnrollment.setCreatedAt(LocalDateTime.now());
-                formalEnrollment.setUpdatedAt(LocalDateTime.now());
-                formalFhisEnrollmentRepository.save(formalEnrollment);
-                
-                saveToSession(phone, "currentFlow", "formal_fhis_enrollment");
-                saveToSession(phone, "currentField", "fhisNo");
-                saveToSession(phone, "handlingExistingEnrollment", "true");
-                
-                return "CON FORMAL SECTOR\nEnter your FHIS Number:";
+                return createNewEnrollment(phone, "Formal");
                 
             case "0":
                 clearenrollmentSession(phone);
@@ -1436,54 +807,81 @@ public class UssdController {
                        "0. Back to menu";
         }
     }
-    // FIXED: Implemented handleExistingEnrollmentChoice
+    private String createNewEnrollment(String phone, String enrollmentType) {
+        try {
+            System.out.println("Creating new " + enrollmentType + " enrollment for phone: " + phone);
+            
+            FhisEnrollment enrollment = new FhisEnrollment();
+            enrollment.setPhoneNumber(phone);
+            enrollment.setEnrollmentType(enrollmentType);
+            enrollment.setCurrentStep("personal_data");
+            enrollment.setCreatedAt(LocalDateTime.now());
+            enrollment.setUpdatedAt(LocalDateTime.now());
+            
+            // Save to database
+            FhisEnrollment savedEnrollment = FhisEnrollmentRepository.save(enrollment);
+            System.out.println("Saved enrollment with ID: " + savedEnrollment.getId());
+            
+            // Set session variables
+            saveToSession(phone, "currentFlow", "fhis_enrollment");
+            saveToSession(phone, "currentField", "fhisNo");
+            saveToSession(phone, "handlingExistingEnrollment", "true");
+            
+            return "CON " + enrollmentType.toUpperCase() + " SECTOR\nEnter your FHIS Number:";
+            
+        } catch (Exception e) {
+            System.err.println("Error creating new enrollment: " + e.getMessage());
+            e.printStackTrace();
+            return "END Error creating enrollment. Please try again.";
+        }
+    }
+
     private String handleExistingEnrollmentChoice(String phone, String choice) {
         try {
-            Optional<InformalFhisEnrollment> existingInformal = InformalfhisEnrollmentRepository.findByPhoneNumber(phone);
-            Optional<FormalFhisEnrollment> existingFormal = formalFhisEnrollmentRepository.findByPhoneNumber(phone);
-    
-            boolean hasInformal = existingInformal.isPresent();
-            boolean hasFormal = existingFormal.isPresent();
-    
-            if ("2".equals(choice)) {
-                // Start fresh: delete both and return to sector selection
-                existingInformal.ifPresent(enrollment -> InformalfhisEnrollmentRepository.delete(enrollment));
-                existingFormal.ifPresent(enrollment -> formalFhisEnrollmentRepository.delete(enrollment));
+            // Now there's only ONE repository call since we have unified model
+            Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(phone);
+            
+            if (!existing.isPresent()) {
                 clearenrollmentSession(phone);
-                
-                // CRITICAL FIX: Maintain the FHIS enrollment flow and return sector selection
-                saveToSession(phone, "currentFlow", "fhis_enrollment");
-                saveToSession(phone, "handlingExistingEnrollment", "true");
-                
-                return "CON FRESH START - Select enrollment type:\n" +
-                       "1. Informal Sector\n" +
-                       "2. Formal Sector\n" +
-                       "0. Back to menu";
+                return "END Enrollment not found.";
             }
-    
-            if ("1".equals(choice)) {
-                if (hasInformal) {
-                    InformalFhisEnrollment enrollment = existingInformal.get();
-                    saveToSession(phone, "currentFlow", "fhis_enrollment");
-                    saveToSession(phone, "currentField", determineCurrentFieldFromEnrollment(enrollment, enrollment.getCurrentStep()));
+            
+            FhisEnrollment enrollment = existing.get();
+            String enrollmentType = enrollment.getEnrollmentType();
+            String currentStep = enrollment.getCurrentStep();
+            
+            switch (choice) {
+                case "1": // Continue existing enrollment
+                    saveToSession(phone, "currentFlow", "fhis_enrollment"); // Single flow now
+                    saveToSession(phone, "currentField", determineCurrentFieldFromEnrollment(enrollment, currentStep));
                     saveToSession(phone, "handlingExistingEnrollment", "true");
+                    
+                    // Use single resume method that handles both types
                     return resumeEnrollmentStep(enrollment);
-                } else if (hasFormal) {
-                    FormalFhisEnrollment enrollment = existingFormal.get();
-                    saveToSession(phone, "currentFlow", "formal_fhis_enrollment");
-                    saveToSession(phone, "currentField", determineCurrentFieldFromFormalEnrollment(enrollment, enrollment.getCurrentStep()));
+                    
+                case "2": // Start fresh
+                    // Delete existing enrollment and return to sector selection
+                    FhisEnrollmentRepository.delete(enrollment);
+                    clearenrollmentSession(phone);
+                    
+                    // Return to sector selection for fresh start
+                    saveToSession(phone, "currentFlow", "fhis_enrollment");
                     saveToSession(phone, "handlingExistingEnrollment", "true");
-                    return resumeFormalEnrollmentStep(enrollment);
-                }
+                    
+                    return "CON FRESH START - Select enrollment type:\n" +
+                           "1. Informal Sector\n" +
+                           "2. Formal Sector\n" +
+                           "0. Back to menu";
+                           
+                case "0": // Back to main menu
+                    clearenrollmentSession(phone);
+                    resetUserSession(phone);
+                    return HandleLevel1(phone, new String[0], true);
+                    
+                default:
+                    return "CON Invalid choice. Please try again.\n1. Continue\n2. Start fresh\n0. Back";
             }
-    
-            if ("0".equals(choice)) {
-                clearenrollmentSession(phone);
-                resetUserSession(phone);
-                return HandleLevel1(phone, new String[0], true);
-            }
-    
-            return "CON Invalid choice. Please try again.\n1. Continue\n2. Start fresh\n0. Back";
+            
         } catch (Exception e) {
             System.err.println("Error handling existing enrollment choice: " + e.getMessage());
             return "END Error. Please try again.";
@@ -1504,55 +902,16 @@ public class UssdController {
     }
 
     // FIXED: Implemented helper
-    private String resumeEnrollmentStep(InformalFhisEnrollment enrollment) {
+    private String resumeEnrollmentStep(FhisEnrollment enrollment) {
         String currentStep = enrollment.getCurrentStep();
+        String enrollmentType = enrollment.getEnrollmentType();
+        
         switch (currentStep) {
             case "personal_data":
                 if (enrollment.getFhisNo() == null) {
-                    return "CON INFORMAL SECTOR\nEnter your FHIS Number:";
-                } else if (enrollment.getTitle() == null) {
+                    return "CON " + enrollmentType.toUpperCase() + " SECTOR\nEnter your FHIS Number:";
+                } else if ("Informal".equals(enrollmentType) && enrollment.getTitle() == null) {
                     return "CON Enter your Title (Mr/Mrs/Ms/Dr):";
-                } else if (enrollment.getSurname() == null) {
-                    return "CON Enter your Surname:";
-                } else if (enrollment.getFirstName() == null) {
-                    return "CON Enter your First Name:";
-                } else if (enrollment.getMiddleName() == null) {
-                    return "CON Enter your Middle Name (optional):";
-                } else {
-                    return "CON Enter your Date of Birth (YYYY-MM-DD):";
-                }
-            case "social_data":
-                if (enrollment.getMaritalStatus() == null) {
-                    return "CON Enter your Marital Status:";
-                } else if (enrollment.getEmail() == null) {
-                    return "CON Enter your Email Address:";
-                } else if (enrollment.getBloodGroup() == null) {
-                    return "CON Enter your Blood Group:";
-                } else if (enrollment.getResidentialAddress() == null) {
-                    return "CON Enter your Residential Address:";
-                } else {
-                    return "CON Enter your Occupation:";
-                }
-            case "corporate_data":
-                if (enrollment.getNinNumber() == null) {
-                    return "CON Enter your NIN Number:";
-                } else if (enrollment.getTelephoneNumber() == null) {
-                    return "CON Enter your Telephone Number:";
-                } else {
-                    return "CON Enter your Organization Name:";
-                }
-            default:
-                return "CON Resume enrollment from where you left off:";
-        }
-    }
-    // Add this method to your UssdController class
-
-    private String resumeFormalEnrollmentStep(FormalFhisEnrollment enrollment) {
-        String currentStep = enrollment.getCurrentStep();
-        switch (currentStep) {
-            case "personal_data":
-                if (enrollment.getFhisNo() == null) {
-                    return "CON FORMAL SECTOR\nEnter your FHIS Number:";
                 } else if (enrollment.getSurname() == null) {
                     return "CON Enter your Surname:";
                 } else if (enrollment.getFirstName() == null) {
@@ -1561,121 +920,88 @@ public class UssdController {
                     return "CON Enter your Middle Name (optional):";
                 } else if (enrollment.getDateOfBirth() == null) {
                     return "CON Enter your Date of Birth (YYYY-MM-DD):";
-                } else if (enrollment.getSex() == null) {
+                } else if ("Formal".equals(enrollmentType) && enrollment.getSex() == null) {
                     return "CON Enter your Sex (M/F):";
                 } else {
                     return "CON Enter your Blood Group:";
                 }
                 
-            case "professional_data":
-                if (enrollment.getDesignation() == null) {
-                    return "CON Enter your Designation:";
-                } else if (enrollment.getOccupation() == null) {
-                    return "CON Enter your Occupation:";
-                } else if (enrollment.getPresentStation() == null) {
-                    return "CON Enter your Present Station:";
-                } else if (enrollment.getRank() == null) {
-                    return "CON Enter your Rank:";
-                } else if (enrollment.getPfNumber() == null) {
-                    return "CON Enter your PF Number:";
-                } else {
-                    return "CON Enter your SDA Name:";
-                }
-                
             case "social_data":
                 if (enrollment.getMaritalStatus() == null) {
                     return "CON Enter your Marital Status:";
-                } else if (enrollment.getTelephoneNumber() == null) {
-                    return "CON Enter your Telephone Number:";
+                } else if (enrollment.getEmail() == null) {
+                    return "CON Enter your Email Address:";
+                } else if ("Informal".equals(enrollmentType) && enrollment.getBloodGroup() == null) {
+                    return "CON Enter your Blood Group:";
                 } else if (enrollment.getResidentialAddress() == null) {
                     return "CON Enter your Residential Address:";
+                } else if ("Informal".equals(enrollmentType)) {
+                    return "CON Enter your Occupation:";
                 } else {
-                    return "CON Enter your Email Address:";
+                    // Formal has different fields in social_data
+                    return "CON Continue with social data:";
                 }
                 
-            case "dependants_data":
-                if (enrollment.getSpouseFirstName() == null) {
-                    return "CON Enter Spouse First Name:";
-                } else if (enrollment.getSpouseSex() == null) {
-                    return "CON Enter Spouse Sex (M/F):";
-                } else if (enrollment.getSpouseBloodGroup() == null) {
-                    return "CON Enter Spouse Blood Group:";
-                } else if (enrollment.getSpouseDateOfBirth() == null) {
-                    return "CON Enter Spouse Date of Birth (YYYY-MM-DD):";
-                } else if (enrollment.getChild1FirstName() == null) {
-                    return "CON Enter Child 1 First Name:";
-                } else if (enrollment.getChild1Sex() == null) {
-                    return "CON Enter Child 1 Sex (M/F):";
-                } else if (enrollment.getChild1BloodGroup() == null) {
-                    return "CON Enter Child 1 Blood Group:";
-                } else if (enrollment.getChild1DateOfBirth() == null) {
-                    return "CON Enter Child 1 Date of Birth (YYYY-MM-DD):";
-                } else if (enrollment.getChild2FirstName() == null) {
-                    return "CON Enter Child 2 First Name:";
-                } else if (enrollment.getChild2Sex() == null) {
-                    return "CON Enter Child 2 Sex (M/F):";
-                } else if (enrollment.getChild2BloodGroup() == null) {
-                    return "CON Enter Child 2 Blood Group:";
-                } else if (enrollment.getChild2DateOfBirth() == null) {
-                    return "CON Enter Child 2 Date of Birth (YYYY-MM-DD):";
-                } else if (enrollment.getChild3FirstName() == null) {
-                    return "CON Enter Child 3 First Name:";
-                } else if (enrollment.getChild3Sex() == null) {
-                    return "CON Enter Child 3 Sex (M/F):";
-                } else if (enrollment.getChild3BloodGroup() == null) {
-                    return "CON Enter Child 3 Blood Group:";
-                } else if (enrollment.getChild3DateOfBirth() == null) {
-                    return "CON Enter Child 3 Date of Birth (YYYY-MM-DD):";
-                } else if (enrollment.getChild4FirstName() == null) {
-                    return "CON Enter Child 4 First Name:";
-                } else if (enrollment.getChild4Sex() == null) {
-                    return "CON Enter Child 4 Sex (M/F):";
-                } else if (enrollment.getChild4BloodGroup() == null) {
-                    return "CON Enter Child 4 Blood Group:";
+            case "corporate_data":
+                if ("Informal".equals(enrollmentType)) {
+                    if (enrollment.getNinNumber() == null) {
+                        return "CON Enter your NIN Number:";
+                    } else if (enrollment.getTelephoneNumber() == null) {
+                        return "CON Enter your Telephone Number:";
+                    } else {
+                        return "CON Enter your Organization Name:";
+                    }
                 } else {
-                    return "CON Enter Child 4 Date of Birth (YYYY-MM-DD):";
+                    // Formal doesn't have corporate_data step
+                    return "CON Continue with enrollment:";
                 }
                 
-            case "healthcare_data":
-                if (enrollment.getHospitalName() == null) {
-                    return "CON Enter Hospital Name:";
-                } else if (enrollment.getHospitalLocation() == null) {
-                    return "CON Enter Hospital Location:";
-                } else {
-                    return "CON Enter Hospital Code Number:";
+            case "professional_data":
+                // Only formal has this step
+                if ("Formal".equals(enrollmentType)) {
+                    if (enrollment.getDesignation() == null) {
+                        return "CON Enter your Designation:";
+                    } else if (enrollment.getOccupation() == null) {
+                        return "CON Enter your Occupation:";
+                    } else if (enrollment.getPresentStation() == null) {
+                        return "CON Enter your Present Station:";
+                    } else if (enrollment.getRank() == null) {
+                        return "CON Enter your Rank:";
+                    } else if (enrollment.getPfNumber() == null) {
+                        return "CON Enter your PF Number:";
+                    } else {
+                        return "CON Enter your SDA Name:";
+                    }
                 }
+                break;
                 
             default:
-                return "CON Resume formal enrollment from where you left off:";
+                return "CON Resume enrollment from where you left off:";
         }
+        
+        return "CON Resume " + enrollmentType.toLowerCase() + " enrollment:";
     }
+    // Add this method to your UssdController class
 
-    private String handlePersonalData(String phone, String inputText, InformalFhisEnrollment enrollment) {
+
+    private String handlePersonalData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
-        System.out.println("Personal Data - Field: " + currentField + ", Input: " + inputText);
-
+        System.out.println("Personal Data - Field: " + currentField + ", Input: " + inputText + ", Type: " + enrollment.getEnrollmentType());
+    
         if (currentField == null) {
             currentField = determineCurrentFieldFromEnrollment(enrollment, "personal_data");
             if (currentField == null) {
-                // All personal data is complete, move to next stage
                 return moveToNextStage(phone, enrollment);
             }
             saveToSession(phone, "currentField", currentField);
-            System.out.println("Auto-determined currentField: " + currentField);
         }
-        
-        System.out.println("Personal Data - Field: " + currentField + ", Input: " + inputText);
-        
-        if (currentField == null) {
-            currentField = "fhisNo";
-            saveToSession(phone, "currentField", currentField);
-        }
-
+    
         // Validate input is not empty (except for optional fields)
         if ((inputText == null || inputText.trim().isEmpty()) && !currentField.equals("middleName")) {
             return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
         }
-
+    
+        // Handle common fields first
         switch (currentField) {
             case "fhisNo":
                 if (!isValidFhisNumber(inputText.trim())) {
@@ -1683,49 +1009,169 @@ public class UssdController {
                 }
                 enrollment.setFhisNo(inputText.trim());
                 enrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "title");
-                return "CON Enter your Title (Mr/Mrs/Ms/Dr):";
-            case "title":
-                if (!isValidTitle(inputText.trim())) {
-                    return "CON Invalid title. Please enter Mr, Mrs, Ms, or Dr:";
+                FhisEnrollmentRepository.save(enrollment);
+                
+                // Next field depends on enrollment type
+                if ("Formal".equals(enrollment.getEnrollmentType())) {
+                    saveToSession(phone, "currentField", "surname");
+                    return "CON Enter your Surname:";
+                } else {
+                    saveToSession(phone, "currentField", "title");
+                    return "CON Enter your Title (Mr/Mrs/Ms/Dr):";
                 }
-                enrollment.setTitle(inputText.trim());
-                InformalfhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "surname");
-                return "CON Enter your Surname:";
+                
             case "surname":
                 if (!isValidName(inputText.trim())) {
                     return "CON Invalid surname format. Please enter a valid surname:";
                 }
                 enrollment.setSurname(inputText.trim());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "firstName");
                 return "CON Enter your First Name:";
+                
             case "firstName":
                 if (!isValidName(inputText.trim())) {
                     return "CON Invalid first name format. Please enter a valid first name:";
                 }
                 enrollment.setFirstName(inputText.trim());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "middleName");
                 return "CON Enter your Middle Name (optional):";
+                
             case "middleName":
                 enrollment.setMiddleName(inputText != null ? inputText.trim() : "");
                 saveToSession(phone, "currentField", "dateOfBirth");
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 return "CON Enter your Date of Birth (YYYY-MM-DD):";
+                
             case "dateOfBirth":
                 if (!isValidDateOfBirth(inputText)) {
                     return "CON Invalid date format or future date. Please use YYYY-MM-DD:";
                 }
                 enrollment.setDateOfBirth(inputText);
                 enrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
+                
+                // Next field depends on enrollment type
+                if ("Formal".equals(enrollment.getEnrollmentType())) {
+                    saveToSession(phone, "currentField", "sex");
+                    return "CON Enter your Sex (M/F):";
+                } else {
+                    saveToSession(phone, "currentField", "bloodGroup");
+                    return "CON Enter your Blood Group:";
+                }
+        }
+        
+        // Handle type-specific fields
+        if ("Formal".equals(enrollment.getEnrollmentType())) {
+            switch (currentField) {
+                case "title":
+                    // Formal doesn't use title, redirect
+                    saveToSession(phone, "currentField", "surname");
+                    return "CON Enter your Surname:";
+                    
+                case "sex":
+                    String upperSex = inputText.trim().toUpperCase();
+                    if (!"M".equals(upperSex) && !"F".equals(upperSex)) {
+                        return "CON Sex: M or F:";
+                    }
+                    enrollment.setSex(upperSex);
+                    saveToSession(phone, "currentField", "bloodGroup");
+                    FhisEnrollmentRepository.save(enrollment);
+                    return "CON Enter your Blood Group:";
+                    
+                case "bloodGroup":
+                    if (!isValidBloodGroup(inputText.trim())) {
+                        return "CON Invalid blood group:";
+                    }
+                    enrollment.setBloodGroup(inputText.trim());
+                    FhisEnrollmentRepository.save(enrollment);
+                    return moveToNextStage(phone, enrollment);
+            }
+        } else {
+            // Informal enrollment
+            switch (currentField) {
+                case "title":
+                    if (!isValidTitle(inputText.trim())) {
+                        return "CON Invalid title. Please enter Mr, Mrs, Ms, or Dr:";
+                    }
+                    enrollment.setTitle(inputText.trim());
+                    FhisEnrollmentRepository.save(enrollment);
+                    saveToSession(phone, "currentField", "surname");
+                    return "CON Enter your Surname:";
+                    
+                case "sex":
+                    // Informal doesn't use sex, redirect
+                    saveToSession(phone, "currentField", "bloodGroup");
+                    return "CON Enter your Blood Group:";
+                    
+                case "bloodGroup":
+                    if (!isValidBloodGroup(inputText.trim())) {
+                        return "CON Invalid blood group:";
+                    }
+                    enrollment.setBloodGroup(inputText.trim());
+                    FhisEnrollmentRepository.save(enrollment);
+                    return moveToNextStage(phone, enrollment);
+            }
+        }
+        
+        return "END Invalid field. Please start over.";
+    }
+    private String handleProfessionalData(String phone, String inputText, FhisEnrollment enrollment) {
+        String currentField = (String) retrieveFromSession(phone, "currentField");
+        System.out.println("Professional Data - Field: " + currentField + ", Input: " + inputText);
+    
+        if (currentField == null) {
+            currentField = determineCurrentFieldFromEnrollment(enrollment, "professional_data");
+            if (currentField == null) {
                 return moveToNextStage(phone, enrollment);
+            }
+            saveToSession(phone, "currentField", currentField);
+        }
+    
+        if (inputText == null || inputText.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
+        }
+    
+        switch (currentField) {
+            case "designation":
+                enrollment.setDesignation(inputText.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "occupation");
+                return "CON Enter your Occupation:";
+                
+            case "occupation":
+                enrollment.setOccupation(inputText.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "presentStation");
+                return "CON Enter your Present Station:";
+                
+            case "presentStation":
+                enrollment.setPresentStation(inputText.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "rank");
+                return "CON Enter your Rank:";
+                
+            case "rank":
+                enrollment.setRank(inputText.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "pfNumber");
+                return "CON Enter your PF Number:";
+                
+            case "pfNumber":
+                enrollment.setPfNumber(inputText.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "sdaName");
+                return "CON Enter your SDA Name:";
+                
+            case "sdaName":
+                enrollment.setSdaName(inputText.trim());
+                enrollment.setUpdatedAt(LocalDateTime.now());
+                FhisEnrollmentRepository.save(enrollment);
+                return moveToNextStage(phone, enrollment);
+                
             default:
-                // Invalid field, determine correct field and redirect
-                String correctField = determineCurrentFieldFromEnrollment(enrollment, "personal_data");
+                String correctField = determineCurrentFieldFromEnrollment(enrollment, "professional_data");
                 if (correctField != null) {
                     saveToSession(phone, "currentField", correctField);
                     return "CON Please enter " + getFieldDisplayName(correctField) + ":";
@@ -1733,8 +1179,7 @@ public class UssdController {
                 return "END Invalid field. Please start over.";
         }
     }
-
-    private String handleSocialData(String phone, String inputText, InformalFhisEnrollment enrollment) {
+    private String handleSocialData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
         System.out.println("Social Data - Field: " + currentField + ", Input: " + inputText);
 
@@ -1762,7 +1207,7 @@ public class UssdController {
                 }
                 enrollment.setMaritalStatus(inputText.trim());
                 enrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "email");
                 return "CON Enter your Email Address:";
             case "email":
@@ -1770,7 +1215,7 @@ public class UssdController {
                     return "CON Invalid email format. Please enter a valid email address:";
                 }
                 enrollment.setEmail(inputText.trim());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "bloodGroup");
                 return "CON Enter your Blood Group:";
             case "bloodGroup":
@@ -1778,18 +1223,18 @@ public class UssdController {
                     return "CON Invalid blood group. Please enter A+, A-, B+, B-, AB+, AB-, O+, or O-:";
                 }
                 enrollment.setBloodGroup(inputText.trim());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "residentialAddress");
                 return "CON Enter your Residential Address:";
             case "residentialAddress":
                 enrollment.setResidentialAddress(inputText.trim());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "occupation");
                 return "CON Enter your Occupation:";
             case "occupation":
                 enrollment.setOccupation(inputText.trim());
                 enrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 return moveToNextStage(phone, enrollment);
             default:
             // Invalid field, determine correct field and redirect
@@ -1802,7 +1247,7 @@ public class UssdController {
         }
     }
 
-    private String handleCorporateData(String phone, String inputText, InformalFhisEnrollment enrollment) {
+    private String handleCorporateData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
         System.out.println("Corporate Data - Field: " + currentField + ", Input: " + inputText);
 
@@ -1830,7 +1275,7 @@ public class UssdController {
                 }
                 enrollment.setNinNumber(inputText.trim());
                 enrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "telephoneNumber");
                 return "CON Enter your Telephone Number:";
             case "telephoneNumber":
@@ -1838,13 +1283,13 @@ public class UssdController {
                     return "CON Invalid phone number format. Please enter a valid phone number:";
                 }
                 enrollment.setTelephoneNumber(inputText.trim());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "organizationName");
                 return "CON Enter your Organization Name:";
             case "organizationName":
                 enrollment.setOrganizationName(inputText.trim());
                 enrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 return moveToNextStage(phone, enrollment);
             default:
                 String correctField = determineCurrentFieldFromEnrollment(enrollment, "corporate_data");
@@ -1856,18 +1301,18 @@ public class UssdController {
         }
     }
 
-    private String HandleEnrollmentCompletion(String phone, String inputText, InformalFhisEnrollment enrollment) {
+    private String HandleEnrollmentCompletion(String phone, String inputText, FhisEnrollment enrollment) {
         switch (inputText) {
             case "1":
                 enrollment.setCurrentStep("completed");
                 enrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 clearenrollmentSession(phone);
                 return "END Enrollment submitted successfully! Thank you for enrolling in the FHIS program. Your reference number is: " + enrollment.getFhisNo();
             case "2":
                 // Allow editing - reset to personal data step
                 enrollment.setCurrentStep("personal_data");
-                InformalfhisEnrollmentRepository.save(enrollment);
+                FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "fhisNo");
                 return "CON EDIT MODE - Enter your FHIS Number:";
             case "0":
@@ -1879,39 +1324,272 @@ public class UssdController {
         }
     }
 
-    private String moveToNextStage(String phone, InformalFhisEnrollment enrollment) {
-        switch (enrollment.getCurrentStep()) {
+    private String handleFormalSocialData(String phone, String inputText, FhisEnrollment enrollment) {
+        String currentField = (String) retrieveFromSession(phone, "currentField");
+        
+        // Extract the last input from the full text
+        String lastChoice = "";
+        if (inputText != null && !inputText.isEmpty()) {
+            String[] parts = inputText.split("\\*");
+            lastChoice = parts.length > 0 ? parts[parts.length - 1] : "";
+        }
+        
+        System.out.println("Formal Social Data - Field: " + currentField + ", Last Input: '" + lastChoice + "'");
+        
+        if (currentField == null) {
+            currentField = determineCurrentFieldFromEnrollment(enrollment, "social_data_formal");
+            if (currentField == null) {
+                return moveToNextStage(phone, enrollment);
+            }
+            saveToSession(phone, "currentField", currentField);
+        }
+    
+        if (lastChoice == null || lastChoice.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
+        }
+    
+        switch (currentField) {
+            case "maritalStatus":
+                if (!isValidMaritalStatus(lastChoice.trim())) {
+                    return "CON Invalid marital status. Please enter Single, Married, Divorced, or Widowed:";
+                }
+                enrollment.setMaritalStatus(lastChoice.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "telephoneNumber");
+                return "CON Enter your Telephone Number:";
+                
+            case "telephoneNumber":
+                if (!isValidPhoneNumber(lastChoice.trim())) {
+                    return "CON Invalid phone number format. Please enter a valid phone number:";
+                }
+                enrollment.setTelephoneNumber(lastChoice.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "residentialAddress");
+                return "CON Enter your Residential Address:";
+                
+            case "residentialAddress":
+                enrollment.setResidentialAddress(lastChoice.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "email");
+                return "CON Enter your Email Address:";
+                
+            case "email":
+                if (!isValidEmail(lastChoice.trim())) {
+                    return "CON Invalid email format. Please enter a valid email address:";
+                }
+                enrollment.setEmail(lastChoice.trim());
+                enrollment.setUpdatedAt(LocalDateTime.now());
+                FhisEnrollmentRepository.save(enrollment);
+                return moveToNextStage(phone, enrollment);
+                
+            default:
+                String correctField = determineCurrentFieldFromEnrollment(enrollment, "social_data_formal");
+                if (correctField != null) {
+                    saveToSession(phone, "currentField", correctField);
+                    return "CON Please enter " + getFieldDisplayName(correctField) + ":";
+                }
+                return "END Invalid field. Please start over.";
+        }
+    }
+    
+    
+    private String moveToNextStage(String phone, FhisEnrollment enrollment) {
+        String enrollmentType = enrollment.getEnrollmentType();
+        String currentStep = enrollment.getCurrentStep();
+        
+        // Add debug info
+        System.out.println("Moving to next stage from: " + currentStep + " for " + enrollmentType);
+        
+        switch (currentStep) {
             case "personal_data":
-                enrollment.setCurrentStep("social_data");
-                InformalfhisEnrollmentRepository.save(enrollment);
+                if ("Formal".equals(enrollmentType)) {
+                    enrollment.setCurrentStep("professional_data");
+                    saveToSession(phone, "currentField", "designation");
+                } else {
+                    enrollment.setCurrentStep("social_data");
+                    saveToSession(phone, "currentField", "maritalStatus");
+                }
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "waitingForContinue", true);
+                return "CON You have reached 25% of your " + enrollmentType.toLowerCase() + 
+                       " enrollment process into FHIS. Please continue to conclude your FHIS registration.\n" + 
+                       "1. Continue\n0. Back";
+                       
+            case "professional_data":
+                // Only for Formal - goes to social_data_formal after professional
+                enrollment.setCurrentStep("social_data_formal");
                 saveToSession(phone, "currentField", "maritalStatus");
-                saveToSession(phone, "waitingForContinue", true); // Flag to wait for user choice
-                return "CON You have reached 25% of your enrolment process into FHIS. Please continue to conclude your FHIS registration in order to access affordable healthcare services.\n" + 
-                    "1. Continue to social data\n0. Back";
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "waitingForContinue", true);
+                return "CON You have reached 50% of your formal enrollment process into FHIS!\n" +
+                       "1. Continue to social data\n0. Back";
+                       
             case "social_data":
+                // For Informal - goes to corporate_data
                 enrollment.setCurrentStep("corporate_data");
-                InformalfhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "currentField", "ninNumber");
-                saveToSession(phone, "waitingForContinue", true); // Flag to wait for user choice
-                return "CON You have reached 50% of your enrolment process into FHIS! Social Details Saved.\n" +
-                        "We will now ask for your corporate data.\n" +
-                        "1. Continue\n" +
-                        "2. Cancel Enrollment";
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "waitingForContinue", true);
+                return "CON You have reached 50% of your informal enrollment process into FHIS!\n" +
+                       "1. Continue to corporate data\n0. Back";
+                       
+            case "social_data_formal":
+                // For Formal - goes to dependants_data
+                enrollment.setCurrentStep("dependants_data");
+                saveToSession(phone, "currentField", "numberOfChildren");
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "waitingForContinue", true);
+                return "CON You have reached 75% of your formal enrollment process into FHIS!\n" +
+                       "1. Continue to dependants data\n0. Back";
+                       
+            case "dependants_data":
+                // Goes to healthcare_provider_data - THIS IS WHERE THE ISSUE LIKELY IS
+                enrollment.setCurrentStep("healthcare_provider_data");
+                saveToSession(phone, "currentField", "hospitalName");
+                FhisEnrollmentRepository.save(enrollment);
+                // Remove the waitingForContinue flag here - go directly to asking for hospital name
+                saveToSession(phone, "waitingForContinue", false);
+                return "CON Enter Hospital Name:";  // Go directly to asking for hospital name
+                       
             case "corporate_data":
+            case "healthcare_provider_data":
                 enrollment.setCurrentStep("completed");
                 enrollment.setUpdatedAt(LocalDateTime.now());
-                InformalfhisEnrollmentRepository.save(enrollment);
-                return "CON You have reached 75% of your enrolment process into FHIS! Almost done.\n" +
-                        showEnrollmentSummary(enrollment) +
-                        "\n1. Confirm Enrollment\n" +
-                        "2. Edit Details\n" +
-                        "0. Cancel Enrollment";
+                FhisEnrollmentRepository.save(enrollment);
+                return "CON Enrollment Complete!\n" +
+                       showEnrollmentSummary(enrollment) +
+                       "\n1. Confirm Enrollment\n2. Edit Details\n0. Cancel Enrollment";
+                       
             default:
+                System.err.println("Unknown step in moveToNextStage: " + currentStep);
                 return "END Enrollment submitted successfully! Thank you for enrolling in the FHIS program.";
         }
     }
+    
+    private String handleHealthcareProviderData(String phone, String inputText, FhisEnrollment enrollment) {
+        String currentField = (String) retrieveFromSession(phone, "currentField");
 
-    private String handleContinuationChoice(String phone, String choice, InformalFhisEnrollment enrollment) {
+        String lastinput = "";
+        if (inputText != null && !inputText.isEmpty()) {
+            String[] parts = inputText.split("\\*");
+            lastinput = parts.length > 0 ? parts[parts.length - 1] : "";
+        }
+        
+        if (currentField == null) {
+            currentField = "hospitalName";
+            saveToSession(phone, "currentField", currentField);
+        }
+        if (lastinput == null || lastinput.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
+        }
+    
+        if (inputText == null || inputText.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
+        }
+    
+        switch (currentField) {
+            case "hospitalName":
+                enrollment.setHospitalName(lastinput.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "hospitalLocation");
+                return "CON Enter Hospital Location:";
+                
+            case "hospitalLocation":
+                enrollment.setHospitalLocation(lastinput.trim());
+                FhisEnrollmentRepository.save(enrollment);
+                saveToSession(phone, "currentField", "hospitalCodeNo");
+                return "CON Enter Hospital Code Number:";
+                
+            case "hospitalCodeNo":
+
+                enrollment.setHospitalCodeNo(lastinput.trim());
+                enrollment.setUpdatedAt(LocalDateTime.now());
+                FhisEnrollmentRepository.save(enrollment);
+                return moveToNextStage(phone, enrollment);
+                
+            default:
+                return "END Invalid field. Please start over.";
+        }
+    }
+    private String handleDependantsData(String phone, String inputText, FhisEnrollment enrollment) {
+        String currentField = (String) retrieveFromSession(phone, "currentField");
+        
+        // Extract the last input from the full text
+        String lastChoice = "";
+        if (inputText != null && !inputText.isEmpty()) {
+            String[] parts = inputText.split("\\*");
+            lastChoice = parts.length > 0 ? parts[parts.length - 1] : "";
+        }
+        
+        System.out.println("Dependants Data - Field: " + currentField + ", Last Input: '" + lastChoice + "'");
+        System.out.println("Full input text: '" + inputText + "'");
+        
+        // Check for continuation choice first
+        Boolean waiting = (Boolean) retrieveFromSession(phone, "waitingForContinue");
+        if (Boolean.TRUE.equals(waiting)) {
+            saveToSession(phone, "waitingForContinue", false);
+            if ("1".equals(lastChoice)) {
+                // User chose to continue, now ask for number of children
+                saveToSession(phone, "currentField", "numberOfChildren");
+                return "CON Enter number of children/dependants (enter 0 if none):";
+            } else if ("0".equals(lastChoice)) {
+                clearenrollmentSession(phone);
+                resetUserSession(phone);
+                return HandleLevel1(phone, new String[0], true);
+            } else {
+                saveToSession(phone, "waitingForContinue", true);  // Keep waiting
+                return "CON Invalid choice. Please select:\n1. Continue to dependants data\n0. Back";
+            }
+        }
+        
+        // Now handle the actual data entry
+        if (currentField == null || !currentField.equals("numberOfChildren")) {
+            saveToSession(phone, "currentField", "numberOfChildren");
+            return "CON Enter number of children/dependants (enter 0 if none):";
+        }
+    
+        if (lastChoice == null || lastChoice.trim().isEmpty()) {
+            return "CON Please enter number of children/dependants (enter 0 if none):";
+        }
+    
+        // Handle common text inputs that mean "no children"
+        String cleanInput = lastChoice.trim().toLowerCase();
+        if (cleanInput.equals("no") || cleanInput.equals("none") || 
+            cleanInput.equals("zero") || cleanInput.equals("nil")) {
+            enrollment.setNumberOfChildren(0);
+            enrollment.setUpdatedAt(LocalDateTime.now());
+            FhisEnrollmentRepository.save(enrollment);
+            System.out.println("Set numberOfChildren to 0 based on text input: " + lastChoice);
+            return moveToNextStage(phone, enrollment);
+        }
+        
+        // Handle "yes" - ask for the actual number
+        if (cleanInput.equals("yes")) {
+            return "CON How many children do you have? Please enter a number (0-20):";
+        }
+    
+        try {
+            int children = Integer.parseInt(lastChoice.trim());
+            if (children < 0 || children > 20) {
+                return "CON Invalid number. Please enter number of children (0-20):";
+            }
+            enrollment.setNumberOfChildren(children);
+            enrollment.setUpdatedAt(LocalDateTime.now());
+            FhisEnrollmentRepository.save(enrollment);
+            System.out.println("Successfully set numberOfChildren to: " + children);
+            return moveToNextStage(phone, enrollment);
+            
+        } catch (NumberFormatException e) {
+            System.err.println("Invalid number format: '" + lastChoice + "'");
+            return "CON Invalid input. Please enter a number (0-20) or 'no' if you have no children:";
+        } catch (Exception e) {
+            System.err.println("Error in handleDependantsData: " + e.getMessage());
+            e.printStackTrace();
+            return "CON Error processing input. Please enter number of children (0-20):";
+        }
+    }
+    
+    private String handleContinuationChoice(String phone, String choice, FhisEnrollment enrollment) {
         Boolean waiting = (Boolean) retrieveFromSession(phone, "waitingForContinue");
         if (Boolean.TRUE.equals(waiting)) {
             saveToSession(phone, "waitingForContinue", false);
@@ -1939,7 +1617,7 @@ public class UssdController {
         }
     }
 
-    private String showEnrollmentSummary(InformalFhisEnrollment enrollment) {
+    private String showEnrollmentSummary(FhisEnrollment enrollment) {
         return "REVIEW:\n" +
                 "Name: " + enrollment.getTitle() + " " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
                 "FHIS: " + enrollment.getFhisNo() + "\n" +
@@ -1947,80 +1625,63 @@ public class UssdController {
                 "Phone: " + enrollment.getTelephoneNumber();
     }
 
-    private InformalFhisEnrollment GetorCreateInformalFhisEnrollment(String phoneNumber) {
+    
+    private FhisEnrollment GetorCreateFhisEnrollment(String phoneNumber) {
         try {
-            Optional<InformalFhisEnrollment> existingEnrollment = InformalfhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
+            System.out.println("Getting enrollment for phone: " + phoneNumber);
+            Optional<FhisEnrollment> existingEnrollment = FhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
+            
             if (existingEnrollment.isPresent()) {
                 System.out.println("Found existing enrollment for phone: " + phoneNumber);
-                InformalFhisEnrollment enrollment = existingEnrollment.get();
-                // Check if it's a completed enrollment that needs to be handled differently
-                if ("completed".equals(enrollment.getCurrentStep())) {
-                    saveToSession(phoneNumber, "existingEnrollmentFlow", "true");
-                }
+                FhisEnrollment enrollment = existingEnrollment.get();
+                System.out.println("Enrollment details: " + enrollment.toString());
                 return enrollment;
             }
             
-            // CRITICAL FIX: Create new enrollment if none exists
-            System.out.println("Creating new informal enrollment for phone: " + phoneNumber);
-            InformalFhisEnrollment newEnrollment = new InformalFhisEnrollment();
-            newEnrollment.setPhoneNumber(phoneNumber);
-            newEnrollment.setEnrollmentType("Informal");
-            newEnrollment.setCurrentStep("personal_data"); // Start with personal data
-            newEnrollment.setCreatedAt(LocalDateTime.now());
-            newEnrollment.setUpdatedAt(LocalDateTime.now());
-            
-            // Save the new enrollment to database
-            InformalFhisEnrollment savedEnrollment = InformalfhisEnrollmentRepository.save(newEnrollment);
-            System.out.println("Created new informal enrollment with ID: " + savedEnrollment.getId());
-            
-            return savedEnrollment;
-            
-        } catch (Exception e) {
-            System.err.println("Error getting/creating informal FHIS enrollment: " + e.getMessage());
-            e.printStackTrace();
+            System.out.println("No existing enrollment found for phone: " + phoneNumber);
             return null;
-        }
-    }
-    
-    private FormalFhisEnrollment GetorCreateFormalFhisEnrollment(String phoneNumber) {
-        try {
-            Optional<FormalFhisEnrollment> existingEnrollment = formalFhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
-            if (existingEnrollment.isPresent()) {
-                System.out.println("Found existing formal enrollment for phone: " + phoneNumber);
-                return existingEnrollment.get();
-            }
-            
-            // CRITICAL FIX: Create new enrollment if none exists
-            System.out.println("Creating new formal enrollment for phone: " + phoneNumber);
-            FormalFhisEnrollment newEnrollment = new FormalFhisEnrollment();
-            newEnrollment.setPhoneNumber(phoneNumber);
-            newEnrollment.setEnrollmentType("Formal");
-            newEnrollment.setCurrentStep("personal_data"); // Start with personal data
-            newEnrollment.setCreatedAt(LocalDateTime.now());
-            newEnrollment.setUpdatedAt(LocalDateTime.now());
-            
-            // Save the new enrollment to database
-            FormalFhisEnrollment savedEnrollment = formalFhisEnrollmentRepository.save(newEnrollment);
-            System.out.println("Created new formal enrollment with ID: " + savedEnrollment.getId());
-            
-            return savedEnrollment;
             
         } catch (Exception e) {
-            System.err.println("Error getting/creating formal FHIS enrollment: " + e.getMessage());
+            System.err.println("Error getting FHIS enrollment: " + e.getMessage());
             e.printStackTrace();
             return null;
         }
     }
     private void clearenrollmentSession(String phoneNumber) {
         try {
-            Set<String> keys = redisTemplate.keys(phoneNumber + ":*");
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
+            System.out.println("Clearing enrollment session for phone: " + phoneNumber);
+            
+            // Only clear enrollment-related keys, not all session data
+            String[] enrollmentKeys = {
+                "currentFlow", "enrollmentOrgId", "currentField", "waitingForContinue",
+                "existingEnrollmentFlow", "handlingExistingEnrollment", "viewingDetails"
+            };
+            
+            for (String keyType : enrollmentKeys) {
+                String fullKey = phoneNumber + ":" + keyType;
+                Boolean exists = redisTemplate.hasKey(fullKey);
+                if (Boolean.TRUE.equals(exists)) {
+                    redisTemplate.delete(fullKey);
+                    System.out.println("Deleted session key: " + fullKey);
+                }
             }
-            System.out.println("Comprehensive enrollment session cleared for phone: " + phoneNumber);
+            
+            System.out.println("Enrollment session cleared for phone: " + phoneNumber);
         } catch (Exception e) {
             System.err.println("Error clearing enrollment session: " + e.getMessage());
+            e.printStackTrace();
         }
+    }
+    private boolean shouldClearEnrollmentSession(String phoneNumber, String reason) {
+        System.out.println("Considering clearing enrollment session for: " + phoneNumber + ", reason: " + reason);
+        
+        // Don't clear session for simple validation errors
+        if (reason.contains("validation") || reason.contains("invalid input")) {
+            System.out.println("Not clearing session - validation error");
+            return false;
+        }
+        
+        return true;
     }
 
     // --- Validation helper methods ---
@@ -2092,36 +1753,28 @@ public class UssdController {
 
     private String getFieldDisplayName(String fieldName) {
         switch (fieldName) {
-            case "fhisNo":
-                return "FHIS Number";
-            case "title":
-                return "Title";
-            case "surname":
-                return "Surname";
-            case "firstName":
-                return "First Name";
-            case "middleName":
-                return "Middle Name";
-            case "dateOfBirth":
-                return "Date of Birth";
-            case "maritalStatus":
-                return "Marital Status";
-            case "email":
-                return "Email Address";
-            case "bloodGroup":
-                return "Blood Group";
-            case "residentialAddress":
-                return "Residential Address";
-            case "occupation":
-                return "Occupation";
-            case "ninNumber":
-                return "NIN Number";
-            case "telephoneNumber":
-                return "Telephone Number";
-            case "organizationName":
-                return "Organization Name";
-            default:
-                return "the required information";
+            case "fhisNo": return "FHIS Number";
+            case "title": return "Title";
+            case "surname": return "Surname";
+            case "firstName": return "First Name";
+            case "middleName": return "Middle Name";
+            case "dateOfBirth": return "Date of Birth";
+            case "sex": return "Sex";
+            case "maritalStatus": return "Marital Status";
+            case "email": return "Email Address";
+            case "bloodGroup": return "Blood Group";
+            case "residentialAddress": return "Residential Address";
+            case "occupation": return "Occupation";
+            case "ninNumber": return "NIN Number";
+            case "telephoneNumber": return "Telephone Number";
+            case "organizationName": return "Organization Name";
+            // Professional fields for Formal enrollment
+            case "designation": return "Designation";
+            case "presentStation": return "Present Station";
+            case "rank": return "Rank";
+            case "pfNumber": return "PF Number";
+            case "sdaName": return "SDA Name";
+            default: return "the required information";
         }
     }
     // --- End Validation helper methods ---
