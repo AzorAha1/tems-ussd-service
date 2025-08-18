@@ -58,54 +58,79 @@ public class ussdcontroller {
         if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
             return "END Invalid phone number provided.";
         }
+        
+        
         String inputedText = (inputText == null) ? "" : inputText.trim();
         // Only remove # at the very end of input, not everywhere
         if (inputedText.endsWith("#")) {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
         }
+
         // extend number on every request
         extendUserSession(normalizedPhoneNumber);
 
-        // Check for FHIS enrollment flow FIRST, before parsing steps
-        String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
-        System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
-
-        // If user sends empty input and they're stuck in FHIS flow, reset
-        if (currentFlow != null && currentFlow.equals("fhis_enrollment") && inputedText.isEmpty()) {
-            resetUserSession(normalizedPhoneNumber);
-            return HandleLevel1(normalizedPhoneNumber, new String[0], true);
-        }    
-
-        // Handle FHIS enrollment flow - this takes precedence over step-based flow
-        if ("fhis_enrollment".equals(currentFlow)) {
-            return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputText);
+        // check for duplicate requests
+        if (isDuplicateRequest(normalizedPhoneNumber, inputText)) {
+            System.out.println("Duplicate request detected for: " + normalizedPhoneNumber);
+            return "CON Processing your request...";
         }
-        String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
-        int step = parts.length;
-        System.out.println("Main USSD Flow - Step: " + step + ", Input: " + inputedText);
 
-        System.out.println("=== MAIN USSD DEBUG ===");
-        System.out.println("Current Flow: " + currentFlow);
-        System.out.println("Input Text: '" + inputedText + "'");
-        System.out.println("Step: " + step);
-        System.out.println("Parts: " + Arrays.toString(parts));
-        System.out.println("========================");
-        // Main USSD flow
-        switch (step) {
-            case 0:
+        // acquire processing lock for this user 
+        if (!acquireUserlock(normalizedPhoneNumber)) {
+            System.out.println("Another request is being processed for: " + normalizedPhoneNumber);
+            return "CON Please wait, processing your previous request...";
+        }
+
+        try {
+
+            // Check for FHIS enrollment flow FIRST, before parsing steps
+            String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
+            System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
+
+            // If user sends empty input and they're stuck in FHIS flow, reset
+            if (currentFlow != null && currentFlow.equals("fhis_enrollment") && inputedText.isEmpty()) {
                 resetUserSession(normalizedPhoneNumber);
-                return HandleLevel1(normalizedPhoneNumber, parts, true);
-            case 1:
-                return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
-            case 2:
-                return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
-            case 3:
-                return handleLevel4(parts[2], normalizedPhoneNumber, parts);
-            case 4:
-                return handlelevel5(parts[3], normalizedPhoneNumber, parts);
-            default:
-                resetUserSession(normalizedPhoneNumber);
-                return "END Session expired. Please start over.";
+                return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+            }    
+
+            // Handle FHIS enrollment flow - this takes precedence over step-based flow
+            if ("fhis_enrollment".equals(currentFlow)) {
+                return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputText);
+            }
+            String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
+            int step = parts.length;
+            System.out.println("Main USSD Flow - Step: " + step + ", Input: " + inputedText);
+
+            System.out.println("=== MAIN USSD DEBUG ===");
+            System.out.println("Current Flow: " + currentFlow);
+            System.out.println("Input Text: '" + inputedText + "'");
+            System.out.println("Step: " + step);
+            System.out.println("Parts: " + Arrays.toString(parts));
+            System.out.println("========================");
+            // Main USSD flow
+            switch (step) {
+                case 0:
+                    resetUserSession(normalizedPhoneNumber);
+                    return HandleLevel1(normalizedPhoneNumber, parts, true);
+                case 1:
+                    return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
+                case 2:
+                    return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
+                case 3:
+                    return handleLevel4(parts[2], normalizedPhoneNumber, parts);
+                case 4:
+                    return handlelevel5(parts[3], normalizedPhoneNumber, parts);
+                default:
+                    resetUserSession(normalizedPhoneNumber);
+                    return "END Session expired. Please start over.";
+            }
+        } catch (Exception e) {
+            System.err.println("Error processing USSD request: " + e.getMessage());
+            e.printStackTrace(); // Added stack trace for debugging
+            resetUserSession(normalizedPhoneNumber);
+            return "END An error occurred. Please try again.";
+        } finally {
+            releaseUserLock(normalizedPhoneNumber); // Always release the lock
         }
     }
     private static final int MAX_ORGANIZATIONS_PER_PAGE = 5;
@@ -537,21 +562,20 @@ public class ussdcontroller {
     // Add a method to completely reset user session when they want to start fresh
     private void resetUserSession(String phoneNumber) {
         try {
-            Set<String> allKeys = redisTemplate.keys(phoneNumber + ":*");
-            if (allKeys != null) {
-                List<String> enrollmentKeys = allKeys.stream()
-                        .filter(key -> key.contains("enrollment") ||
-                                key.contains("fhis") ||
-                                key.contains("currentFlow") ||
-                                key.contains("currentField") ||
-                                key.contains("waitingForContinue") ||
-                                key.contains("existingEnrollmentFlow") ||
-                                key.contains("currentSubMenu"))
-                        .collect(Collectors.toList());
-                if (!enrollmentKeys.isEmpty()) {
-                    redisTemplate.delete(enrollmentKeys);
-                }
+            // Use specific keys instead of wildcard
+            String[] allSessionKeys = {
+                "currentFlow", "enrollmentOrgId", "searchTerm", "currentPage", 
+                "totalPages", "org_ids", "selectedOrgId", "isMoreResultsFlow",
+                "currentField", "waitingForContinue", "existingEnrollmentFlow",
+                "currentSubMenu", "handlingExistingEnrollment", "viewingDetails"
+            };
+            
+            for (String keyType : allSessionKeys) {
+                String fullKey = phoneNumber + ":" + keyType;
+                redisTemplate.delete(fullKey);
             }
+            
+            System.out.println("Session reset completed for: " + phoneNumber);
         } catch (Exception e) {
             System.err.println("Error resetting user session: " + e.getMessage());
         }
@@ -718,18 +742,21 @@ public class ussdcontroller {
     
                 if ("completed".equals(currentStep)) {
                     saveToSession(phoneNumber, "existingEnrollmentFlow", "completed");
-                    return "CON You already have a completed enrollment.\n" +
+                    return "CON You already have a completed FHIS enrollment!\n" +
                             "Name: " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
-                            "FHIS No: " + enrollment.getFhisNo() + "\n" +
-                            "1. Continue\n" +
-                            "2. Start Fresh\n" +
+                            "FHIS No: " + enrollment.getFhisNo() + "\n\n" +
+                            "Do you want to continue with this enrollment?\n" +
+                            "1. Yes - View Details\n" +
+                            "2. No - Start Fresh Enrollment\n" +
                             "0. Exit";
                 } else if (currentStep != null && !"sector_selection".equals(currentStep)) {
                     saveToSession(phoneNumber, "existingEnrollmentFlow", "incomplete");
-                    return "CON Existing enrollment found (Incomplete).\n" +
-                            "Progress: " + getProgressPercentage(currentStep) + "%\n" +
-                            "1. Continue\n" +
-                            "2. Start Fresh\n" +
+                    return "CON Incomplete FHIS enrollment found!\n" +
+                            "Progress: " + getProgressPercentage(currentStep) + "% complete\n" +
+                            "Last step: " + getStepDescription(currentStep) + "\n\n" +
+                            "Do you want to continue where you left off?\n" +
+                            "1. Yes - Continue Enrollment\n" +
+                            "2. No - Start Fresh Enrollment\n" +
                             "0. Exit";
                 }
             }
@@ -737,6 +764,25 @@ public class ussdcontroller {
             System.err.println("Error checking existing enrollment: " + e.getMessage());
         }
         return null;
+    }
+    private String getStepDescription(String step) {
+        switch (step) {
+            case "personal_data":
+                return "Personal Information";
+            case "social_data":
+            case "social_data_formal":
+                return "Social Information";
+            case "corporate_data":
+                return "Corporate Information";
+            case "professional_data":
+                return "Professional Information";
+            case "dependants_data":
+                return "Dependants Information";
+            case "healthcare_provider_data":
+                return "Healthcare Provider Selection";
+            default:
+                return "Unknown";
+        }
     }
     
 
@@ -1203,7 +1249,7 @@ public class ussdcontroller {
         switch (currentField) {
             case "maritalStatus":
                 if (!isValidMaritalStatus(inputText.trim())) {
-                    return "CON Invalid marital status. Please enter Single, Married, Divorced, or Widowed:";
+                    return "CON Invalid marital status. Please enter Single\nMarried, Divorced, or Widowed:";
                 }
                 enrollment.setMaritalStatus(inputText.trim());
                 enrollment.setUpdatedAt(LocalDateTime.now());
@@ -1397,7 +1443,6 @@ public class ussdcontroller {
         String enrollmentType = enrollment.getEnrollmentType();
         String currentStep = enrollment.getCurrentStep();
         
-        // Add debug info
         System.out.println("Moving to next stage from: " + currentStep + " for " + enrollmentType);
         
         switch (currentStep) {
@@ -1411,61 +1456,86 @@ public class ussdcontroller {
                 }
                 FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "waitingForContinue", true);
-                return "CON You have reached 25% of your " + enrollmentType.toLowerCase() + 
-                       " enrollment process into FHIS. Please continue to conclude your FHIS registration.\n" + 
-                       "1. Continue\n0. Back";
+                return "CON ✓ Personal Information Complete!\n" +
+                       "Progress: 25% of " + enrollmentType.toLowerCase() + " enrollment\n\n" + 
+                       "Ready to continue with " + getNextSectionName(enrollmentType, currentStep) + "?\n" +
+                       "1. Yes - Continue\n" +
+                       "2. No - Review/Edit\n" +
+                       "0. Exit Enrollment";
                        
             case "professional_data":
-                // Only for Formal - goes to social_data_formal after professional
                 enrollment.setCurrentStep("social_data_formal");
                 saveToSession(phone, "currentField", "maritalStatus");
                 FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "waitingForContinue", true);
-                return "CON You have reached 50% of your formal enrollment process into FHIS!\n" +
-                       "1. Continue to social data\n0. Back";
+                return "CON ✓ Professional Information Complete!\n" +
+                       "Progress: 50% of formal enrollment\n\n" +
+                       "Ready to continue with Social Information?\n" +
+                       "1. Yes - Continue\n" +
+                       "2. No - Review/Edit\n" +
+                       "0. Exit Enrollment";
                        
             case "social_data":
-                // For Informal - goes to corporate_data
                 enrollment.setCurrentStep("corporate_data");
                 saveToSession(phone, "currentField", "ninNumber");
                 FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "waitingForContinue", true);
-                return "CON You have reached 50% of your informal enrollment process into FHIS!\n" +
-                       "1. Continue to corporate data\n0. Back";
+                return "CON ✓ Social Information Complete!\n" +
+                       "Progress: 50% of informal enrollment\n\n" +
+                       "Ready to continue with Corporate Information?\n" +
+                       "1. Yes - Continue\n" +
+                       "2. No - Review/Edit\n" +
+                       "0. Exit Enrollment";
                        
             case "social_data_formal":
-                // For Formal - goes to dependants_data
                 enrollment.setCurrentStep("dependants_data");
                 saveToSession(phone, "currentField", "numberOfChildren");
                 FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "waitingForContinue", true);
-                return "CON You have reached 75% of your formal enrollment process into FHIS!\n" +
-                       "1. Continue to dependants data\n0. Back";
+                return "CON ✓ Social Information Complete!\n" +
+                       "Progress: 75% of formal enrollment\n\n" +
+                       "Ready to continue with Dependants Information?\n" +
+                       "1. Yes - Continue\n" +
+                       "2. No - Review/Edit\n" +
+                       "0. Exit Enrollment";
                        
             case "dependants_data":
-                // Goes to healthcare_provider_data - THIS IS WHERE THE ISSUE LIKELY IS
                 enrollment.setCurrentStep("healthcare_provider_data");
                 saveToSession(phone, "currentField", "hospitalName");
                 FhisEnrollmentRepository.save(enrollment);
-                // Remove the waitingForContinue flag here - go directly to asking for hospital name
                 saveToSession(phone, "waitingForContinue", false);
-                return "CON Enter Hospital Name:";  // Go directly to asking for hospital name
+                return "CON ✓ Dependants Information Complete!\n" +
+                       "Progress: 90% of " + enrollmentType.toLowerCase() + " enrollment\n\n" +
+                       "Final Step: Healthcare Provider Selection\n" +
+                       "Enter Hospital Name:";
                        
             case "corporate_data":
             case "healthcare_provider_data":
                 enrollment.setCurrentStep("completed");
                 enrollment.setUpdatedAt(LocalDateTime.now());
                 FhisEnrollmentRepository.save(enrollment);
-                return "CON Enrollment Complete!\n" +
+                return "CON 🎉 FHIS Enrollment Complete!\n\n" +
                        showEnrollmentSummary(enrollment) +
-                       "\n1. Confirm Enrollment\n2. Edit Details\n0. Cancel Enrollment";
+                       "\n\nConfirm your enrollment details:\n" +
+                       "1. Yes - Submit Enrollment\n" +
+                       "2. No - Review/Edit Details\n" +
+                       "0. Cancel Enrollment";
                        
             default:
                 System.err.println("Unknown step in moveToNextStage: " + currentStep);
                 return "END Enrollment submitted successfully! Thank you for enrolling in the FHIS program.";
         }
     }
-    
+    // Helper method for section names
+    private String getNextSectionName(String enrollmentType, String currentStep) {
+        if ("Formal".equals(enrollmentType) && "personal_data".equals(currentStep)) {
+            return "Professional Information";
+        } else if ("Informal".equals(enrollmentType) && "personal_data".equals(currentStep)) {
+            return "Social Information";
+        }
+        return "next section";
+    }
+        
     private String handleHealthcareProviderData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
 
@@ -1593,29 +1663,82 @@ public class ussdcontroller {
         Boolean waiting = (Boolean) retrieveFromSession(phone, "waitingForContinue");
         if (Boolean.TRUE.equals(waiting)) {
             saveToSession(phone, "waitingForContinue", false);
-            if ("1".equals(choice)) {
-                return promptForNextField((String) retrieveFromSession(phone, "currentField"));
-            } else if ("0".equals(choice)) {
-                clearenrollmentSession(phone);
-                resetUserSession(phone);
-                return HandleLevel1(phone, new String[0], true);
-            } else {
-                return "CON Invalid. 1 to continue, 0 to back.";
+            
+            switch (choice) {
+                case "1": // Yes - Continue
+                    String currentField = (String) retrieveFromSession(phone, "currentField");
+                    return promptForNextField(currentField, enrollment);
+                    
+                case "2": // No - Review/Edit
+                    return handleReviewEditOption(phone, enrollment);
+                    
+                case "0": // Exit
+                    clearenrollmentSession(phone);
+                    resetUserSession(phone);
+                    return "CON Enrollment cancelled.\n\n" +
+                           "Your progress has been saved. You can continue later.\n" +
+                           "1. Return to Main Menu\n" +
+                           "0. Exit";
+                           
+                default:
+                    // Invalid choice - show options again
+                    saveToSession(phone, "waitingForContinue", true);
+                    String currentStep = enrollment.getCurrentStep();
+                    String enrollmentType = enrollment.getEnrollmentType();
+                    
+                    return "CON Invalid choice. Please select:\n\n" +
+                           "Progress: " + getProgressPercentage(currentStep) + "% of " + 
+                           enrollmentType.toLowerCase() + " enrollment\n\n" +
+                           "1. Yes - Continue Enrollment\n" +
+                           "2. No - Review/Edit Details\n" +
+                           "0. Exit Enrollment";
             }
         }
         return null;
     }
-
-    private String promptForNextField(String currentField) {
-        switch (currentField) {
-            case "maritalStatus":
-                return "CON Enter your Marital Status:";
-            case "ninNumber":
-                return "CON Enter your NIN Number:";
+    private String handleReviewEditOption(String phone, FhisEnrollment enrollment) {
+        // For now, just continue - you can enhance this later to show review options
+        String currentField = (String) retrieveFromSession(phone, "currentField");
+        return promptForNextField(currentField, enrollment);
+    }
+    private String promptForNextField(String currentField, FhisEnrollment enrollment) {
+        String enrollmentType = enrollment.getEnrollmentType();
+        String currentStep = enrollment.getCurrentStep();
+        
+        switch (currentStep) {
+            case "professional_data":
+                switch (currentField) {
+                    case "designation":
+                        return "CON PROFESSIONAL INFORMATION\n\nEnter your Designation:";
+                    default:
+                        return "CON Enter " + getFieldDisplayName(currentField) + ":";
+                }
+                
+            case "social_data":
+            case "social_data_formal":
+                switch (currentField) {
+                    case "maritalStatus":
+                        return "CON SOCIAL INFORMATION\n\nEnter your Marital Status\n(Single/Married/Divorced/Widowed):";
+                    default:
+                        return "CON Enter " + getFieldDisplayName(currentField) + ":";
+                }
+                
+            case "corporate_data":
+                switch (currentField) {
+                    case "ninNumber":
+                        return "CON CORPORATE INFORMATION\n\nEnter your NIN Number (11 digits):";
+                    default:
+                        return "CON Enter " + getFieldDisplayName(currentField) + ":";
+                }
+                
+            case "dependants_data":
+                return "CON DEPENDANTS INFORMATION\n\nEnter number of children/dependants\n(Enter 0 if none):";
+                
             default:
-                return "CON Continue with enrollment:";
+                return "CON Enter " + getFieldDisplayName(currentField) + ":";
         }
     }
+
 
     private String showEnrollmentSummary(FhisEnrollment enrollment) {
         return "REVIEW:\n" +
@@ -1749,6 +1872,57 @@ public class ussdcontroller {
             return false;
         String normalized = phone.replaceAll("[^0-9]", "");
         return normalized.length() >= 10 && normalized.length() <= 14;
+    }
+
+    // handle duplicate requests
+    private boolean isDuplicateRequest(String phoneNumber, String inputedText) {
+        try {
+            String Requestkey = phoneNumber + ":last_request";
+            String currentRequest = phoneNumber + (inputedText != null ? inputedText : "");
+            String last_request = (String) redisTemplate.opsForValue().get(Requestkey);
+            Long currentTime = System.currentTimeMillis();
+            if (currentRequest.equals(last_request)) {
+                // get timekey
+                String timekey = phoneNumber + ":last_request_time";
+                // get last time from timekey
+                Long lastime = (Long) redisTemplate.opsForValue().get(timekey);
+                // Check if this is the same request within 3 seconds
+                if (lastime != null && (currentTime - lastime) < 3000) {
+                    return true; // meaning its a duplicate
+                }
+                // store current request
+                redisTemplate.opsForValue().set(Requestkey, currentRequest, 10, TimeUnit.MINUTES);
+                // store last request time
+                redisTemplate.opsForValue().set(phoneNumber + ":last_request_time", currentTime, 10, TimeUnit.MINUTES);
+                return false;
+            }
+            // Store the new request
+            redisTemplate.opsForValue().set(Requestkey, currentRequest, 10, TimeUnit.MINUTES);
+            // Store the current time
+            redisTemplate.opsForValue().set(phoneNumber + ":last_request_time", currentTime, 10, TimeUnit.MINUTES);
+            return false; // not a duplicate
+        } catch (Exception e) {
+            System.err.println("Error checking duplicate request: " + e.getMessage());
+            return false;
+        }
+    }
+    private boolean acquireUserlock(String phoneNumber) {
+        try {
+            String lockKey = phoneNumber + ":processing_lock";
+            Boolean lockAcquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "locked", 30, TimeUnit.SECONDS);
+            return Boolean.TRUE.equals(lockAcquired);
+        } catch (Exception e) {
+            System.err.println("Error acquiring user lock: " + e.getMessage());
+            return false;
+        }
+    }
+    private void releaseUserLock(String phoneNumber) {
+        try {
+            String lockKey = phoneNumber + ":processing_lock";
+            redisTemplate.delete(lockKey);
+        } catch (Exception e) {
+            System.err.println("Error releasing user lock: " + e.getMessage());
+        }
     }
 
     private String getFieldDisplayName(String fieldName) {
