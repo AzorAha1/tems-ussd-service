@@ -70,67 +70,58 @@ public class ussdcontroller {
         extendUserSession(normalizedPhoneNumber);
 
         // check for duplicate requests
-        if (isDuplicateRequest(normalizedPhoneNumber, inputText)) {
-            System.out.println("Duplicate request detected for: " + normalizedPhoneNumber);
-            return "CON Processing your request...";
-        }
+        // if (!inputText.isEmpty() && isDuplicateRequest(normalizedPhoneNumber, inputText)) {
+        //     System.out.println("Duplicate request detected for: " + normalizedPhoneNumber);
+        //     return "CON Processing your request...";
+        // }
 
         // acquire processing lock for this user 
-        if (!acquireUserlock(normalizedPhoneNumber)) {
-            System.out.println("Another request is being processed for: " + normalizedPhoneNumber);
-            return "CON Please wait, processing your previous request...";
-        }
+        // if (!acquireUserLock(normalizedPhoneNumber)) {
+        //     System.out.println("Another request is being processed for: " + normalizedPhoneNumber);
+        //     return "CON Please wait, processing your previous request...";
+        // }
 
-        try {
 
             // Check for FHIS enrollment flow FIRST, before parsing steps
-            String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
-            System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
+        String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
+        System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
 
-            // If user sends empty input and they're stuck in FHIS flow, reset
-            if (currentFlow != null && currentFlow.equals("fhis_enrollment") && inputedText.isEmpty()) {
-                resetUserSession(normalizedPhoneNumber);
-                return HandleLevel1(normalizedPhoneNumber, new String[0], true);
-            }    
-
-            // Handle FHIS enrollment flow - this takes precedence over step-based flow
-            if ("fhis_enrollment".equals(currentFlow)) {
-                return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputText);
-            }
-            String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
-            int step = parts.length;
-            System.out.println("Main USSD Flow - Step: " + step + ", Input: " + inputedText);
-
-            System.out.println("=== MAIN USSD DEBUG ===");
-            System.out.println("Current Flow: " + currentFlow);
-            System.out.println("Input Text: '" + inputedText + "'");
-            System.out.println("Step: " + step);
-            System.out.println("Parts: " + Arrays.toString(parts));
-            System.out.println("========================");
-            // Main USSD flow
-            switch (step) {
-                case 0:
-                    resetUserSession(normalizedPhoneNumber);
-                    return HandleLevel1(normalizedPhoneNumber, parts, true);
-                case 1:
-                    return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
-                case 2:
-                    return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
-                case 3:
-                    return handleLevel4(parts[2], normalizedPhoneNumber, parts);
-                case 4:
-                    return handlelevel5(parts[3], normalizedPhoneNumber, parts);
-                default:
-                    resetUserSession(normalizedPhoneNumber);
-                    return "END Session expired. Please start over.";
-            }
-        } catch (Exception e) {
-            System.err.println("Error processing USSD request: " + e.getMessage());
-            e.printStackTrace(); // Added stack trace for debugging
+        // If user sends empty input and they're stuck in FHIS flow, reset
+        if (currentFlow != null && currentFlow.equals("fhis_enrollment") && inputedText.isEmpty()) {
             resetUserSession(normalizedPhoneNumber);
-            return "END An error occurred. Please try again.";
-        } finally {
-            releaseUserLock(normalizedPhoneNumber); // Always release the lock
+            return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+        }    
+
+        // Handle FHIS enrollment flow - this takes precedence over step-based flow
+        if ("fhis_enrollment".equals(currentFlow)) {
+            return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputText);
+        }
+        String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
+        int step = parts.length;
+        System.out.println("Main USSD Flow - Step: " + step + ", Input: " + inputedText);
+
+        System.out.println("=== MAIN USSD DEBUG ===");
+        System.out.println("Current Flow: " + currentFlow);
+        System.out.println("Input Text: '" + inputedText + "'");
+        System.out.println("Step: " + step);
+        System.out.println("Parts: " + Arrays.toString(parts));
+        System.out.println("========================");
+        // Main USSD flow
+        switch (step) {
+            case 0:
+                resetUserSession(normalizedPhoneNumber);
+                return HandleLevel1(normalizedPhoneNumber, parts, true);
+            case 1:
+                return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
+            case 2:
+                return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
+            case 3:
+                return handleLevel4(parts[2], normalizedPhoneNumber, parts);
+            case 4:
+                return handlelevel5(parts[3], normalizedPhoneNumber, parts);
+            default:
+                resetUserSession(normalizedPhoneNumber);
+                return "END Session expired. Please start over.";
         }
     }
     private static final int MAX_ORGANIZATIONS_PER_PAGE = 5;
@@ -467,10 +458,10 @@ public class ussdcontroller {
     private void saveToSession(String phoneNumber, String key, Object value) {
         try {
             String sessionkey = phoneNumber + ":" + key;
-            System.out.println("Saving to session - Key: " + sessionkey +
-                    ", Type: " + (value != null ? value.getClass().getSimpleName() : "null") +
-                    ", Value: " + value);
-            redisTemplate.opsForValue().set(sessionkey, value, 10, TimeUnit.MINUTES);
+            // OPTIMIZATION: Use shorter expiration for frequently accessed data
+            int timeoutMinutes = key.equals("currentField") ? 15 : 10;
+            redisTemplate.opsForValue().set(sessionkey, value, timeoutMinutes, TimeUnit.MINUTES);
+            // Removed excessive logging to improve performance
         } catch (Exception e) {
             System.err.println("Error saving to session: " + e.getMessage());
         }
@@ -535,25 +526,43 @@ public class ussdcontroller {
                 "0. Back to menu";
     }
     //extend session time
+    // private void extendUserSession(String phoneNumber) {
+    //     try {
+    //         // Define known session keys instead of using wildcard search
+    //         String[] knownKeys = {
+    //             "currentFlow", "enrollmentOrgId", "searchTerm", "currentPage", 
+    //             "totalPages", "org_ids", "selectedOrgId", "isMoreResultsFlow",
+    //             "currentField", "waitingForContinue", "existingEnrollmentFlow",
+    //             "currentSubMenu", "handlingExistingEnrollment", "viewingDetails"
+    //         };
+            
+    //         for (String keyType : knownKeys) {
+    //             String fullKey = phoneNumber + ":" + keyType;
+    //             Boolean exists = redisTemplate.hasKey(fullKey);
+    //             if (Boolean.TRUE.equals(exists)) {
+    //                 redisTemplate.expire(fullKey, 10, TimeUnit.MINUTES);
+    //             }
+    //         }
+    //         System.out.println("Session extended for phone: " + phoneNumber);
+    //     } catch (Exception e) {
+    //         System.err.println("Error extending user session: " + e.getMessage());
+    //     }
+    // }
     private void extendUserSession(String phoneNumber) {
         try {
-            // Define known session keys instead of using wildcard search
-            String[] knownKeys = {
-                "currentFlow", "enrollmentOrgId", "searchTerm", "currentPage", 
-                "totalPages", "org_ids", "selectedOrgId", "isMoreResultsFlow",
-                "currentField", "waitingForContinue", "existingEnrollmentFlow",
-                "currentSubMenu", "handlingExistingEnrollment", "viewingDetails"
-            };
+            // Only extend the most critical keys
+            String[] criticalKeys = {"currentFlow", "selectedOrgId", "currentField"};
             
-            for (String keyType : knownKeys) {
+            for (String keyType : criticalKeys) {
                 String fullKey = phoneNumber + ":" + keyType;
-                Boolean exists = redisTemplate.hasKey(fullKey);
-                if (Boolean.TRUE.equals(exists)) {
+                if (redisTemplate.hasKey(fullKey)) {
                     redisTemplate.expire(fullKey, 10, TimeUnit.MINUTES);
                 }
             }
-            System.out.println("Session extended for phone: " + phoneNumber);
+            // Remove the console log or make it conditional
+            // System.out.println("Session extended for phone: " + phoneNumber);
         } catch (Exception e) {
+            // Don't fail the request if session extension fails
             System.err.println("Error extending user session: " + e.getMessage());
         }
     }
@@ -1030,10 +1039,11 @@ public class ussdcontroller {
     // Add this method to your UssdController class
 
 
+    // 2. FIXED: Optimized handlePersonalData method - reduced database calls
     private String handlePersonalData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
         System.out.println("Personal Data - Field: " + currentField + ", Input: " + inputText + ", Type: " + enrollment.getEnrollmentType());
-    
+
         if (currentField == null) {
             currentField = determineCurrentFieldFromEnrollment(enrollment, "personal_data");
             if (currentField == null) {
@@ -1041,80 +1051,92 @@ public class ussdcontroller {
             }
             saveToSession(phone, "currentField", currentField);
         }
-    
+
         // Validate input is not empty (except for optional fields)
         if ((inputText == null || inputText.trim().isEmpty()) && !currentField.equals("middleName")) {
             return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
         }
-    
-        // Handle common fields first
+
+        // OPTIMIZATION: Batch database updates instead of saving after each field
+        boolean shouldSave = false;
+        String nextField = null;
+        String nextPrompt = null;
+
         switch (currentField) {
             case "fhisNo":
                 if (!isValidFhisNumber(inputText.trim())) {
                     return "CON Invalid FHIS Number format. Please enter a valid FHIS Number:";
                 }
                 enrollment.setFhisNo(inputText.trim());
-                enrollment.setUpdatedAt(LocalDateTime.now());
-                FhisEnrollmentRepository.save(enrollment);
+                shouldSave = true;
                 
-                // Next field depends on enrollment type
                 if ("Formal".equals(enrollment.getEnrollmentType())) {
-                    saveToSession(phone, "currentField", "surname");
-                    return "CON Enter your Surname:";
+                    nextField = "surname";
+                    nextPrompt = "CON Enter your Surname:";
                 } else {
-                    saveToSession(phone, "currentField", "title");
-                    return "CON Enter your Title (Mr/Mrs/Ms/Dr):";
+                    nextField = "title";
+                    nextPrompt = "CON Enter your Title (Mr/Mrs/Ms/Dr):";
                 }
+                break;
                 
             case "surname":
                 if (!isValidName(inputText.trim())) {
                     return "CON Invalid surname format. Please enter a valid surname:";
                 }
                 enrollment.setSurname(inputText.trim());
-                FhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "firstName");
-                return "CON Enter your First Name:";
+                shouldSave = true;
+                nextField = "firstName";
+                nextPrompt = "CON Enter your First Name:";
+                break;
                 
             case "firstName":
                 if (!isValidName(inputText.trim())) {
                     return "CON Invalid first name format. Please enter a valid first name:";
                 }
                 enrollment.setFirstName(inputText.trim());
-                FhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "middleName");
-                return "CON Enter your Middle Name (optional):";
+                shouldSave = true;
+                nextField = "middleName";
+                nextPrompt = "CON Enter your Middle Name (optional):";
+                break;
                 
             case "middleName":
                 enrollment.setMiddleName(inputText != null ? inputText.trim() : "");
-                saveToSession(phone, "currentField", "dateOfBirth");
-                FhisEnrollmentRepository.save(enrollment);
-                return "CON Enter your Date of Birth (YYYY-MM-DD):";
+                shouldSave = true;
+                nextField = "dateOfBirth";
+                nextPrompt = "CON Enter your Date of Birth (DD-MM-YYYY or YYYY-MM-DD):";
+                break;
                 
             case "dateOfBirth":
-                if (!isValidDateOfBirth(inputText)) {
-                    return "CON Invalid date format or future date. Please use YYYY-MM-DD:";
+                // CRITICAL FIX: Improved date validation with better error messages
+                String cleanDateInput = inputText.trim();
+                if (!isValidDateOfBirth(cleanDateInput)) {
+                    return "CON Invalid date. Please use:\n" +
+                        "DD-MM-YYYY (e.g. 15-03-1990)\n" +
+                        "or YYYY-MM-DD (e.g. 1990-03-15):";
                 }
-                enrollment.setDateOfBirth(inputText);
-                enrollment.setUpdatedAt(LocalDateTime.now());
-                FhisEnrollmentRepository.save(enrollment);
                 
-                // Next field depends on enrollment type
+                // Convert and store in standard format
+                String standardDate = convertToStandardDate(cleanDateInput);
+                enrollment.setDateOfBirth(standardDate);
+                shouldSave = true;
+                
                 if ("Formal".equals(enrollment.getEnrollmentType())) {
-                    saveToSession(phone, "currentField", "sex");
-                    return "CON Enter your Sex (M/F):";
+                    nextField = "sex";
+                    nextPrompt = "CON Enter your Sex (M/F):";
                 } else {
-                    saveToSession(phone, "currentField", "bloodGroup");
-                    return "CON Enter your Blood Group:";
+                    nextField = "bloodGroup";
+                    nextPrompt = "CON Enter your Blood Group:";
                 }
+                break;
         }
         
         // Handle type-specific fields
         if ("Formal".equals(enrollment.getEnrollmentType())) {
             switch (currentField) {
                 case "title":
-                    // Formal doesn't use title, redirect
-                    saveToSession(phone, "currentField", "surname");
-                    return "CON Enter your Surname:";
+                    nextField = "surname";
+                    nextPrompt = "CON Enter your Surname:";
+                    break;
                     
                 case "sex":
                     String upperSex = inputText.trim().toUpperCase();
@@ -1122,17 +1144,19 @@ public class ussdcontroller {
                         return "CON Sex: M or F:";
                     }
                     enrollment.setSex(upperSex);
-                    saveToSession(phone, "currentField", "bloodGroup");
-                    FhisEnrollmentRepository.save(enrollment);
-                    return "CON Enter your Blood Group:";
+                    shouldSave = true;
+                    nextField = "bloodGroup";
+                    nextPrompt = "CON Enter your Blood Group:";
+                    break;
                     
                 case "bloodGroup":
                     if (!isValidBloodGroup(inputText.trim())) {
                         return "CON Invalid blood group:";
                     }
                     enrollment.setBloodGroup(inputText.trim());
-                    FhisEnrollmentRepository.save(enrollment);
-                    return moveToNextStage(phone, enrollment);
+                    shouldSave = true;
+                    // No next field - move to next stage
+                    break;
             }
         } else {
             // Informal enrollment
@@ -1142,27 +1166,63 @@ public class ussdcontroller {
                         return "CON Invalid title. Please enter Mr, Mrs, Ms, or Dr:";
                     }
                     enrollment.setTitle(inputText.trim());
-                    FhisEnrollmentRepository.save(enrollment);
-                    saveToSession(phone, "currentField", "surname");
-                    return "CON Enter your Surname:";
-                    
-                case "sex":
-                    // Informal doesn't use sex, redirect
-                    saveToSession(phone, "currentField", "bloodGroup");
-                    return "CON Enter your Blood Group:";
+                    shouldSave = true;
+                    nextField = "surname";
+                    nextPrompt = "CON Enter your Surname:";
+                    break;
                     
                 case "bloodGroup":
                     if (!isValidBloodGroup(inputText.trim())) {
                         return "CON Invalid blood group:";
                     }
                     enrollment.setBloodGroup(inputText.trim());
-                    FhisEnrollmentRepository.save(enrollment);
-                    return moveToNextStage(phone, enrollment);
+                    shouldSave = true;
+                    // No next field - move to next stage
+                    break;
             }
         }
-        
-        return "END Invalid field. Please start over.";
+
+        // OPTIMIZATION: Single database save with updated timestamp
+        if (shouldSave) {
+            try {
+                enrollment.setUpdatedAt(LocalDateTime.now());
+                FhisEnrollmentRepository.save(enrollment);
+                System.out.println("Saved field: " + currentField + " = " + inputText);
+            } catch (Exception e) {
+                System.err.println("Database save error: " + e.getMessage());
+                return "CON Error saving data. Please try again:";
+            }
+        }
+
+        // Set next field and return prompt
+        if (nextField != null) {
+            saveToSession(phone, "currentField", nextField);
+            return nextPrompt;
+        } else {
+            // Move to next stage
+            return moveToNextStage(phone, enrollment);
+        }
     }
+    private String convertToStandardDate(String dateInput) {
+        try {
+            String cleanDate = dateInput.trim().replace("/", "-").replace(".", "-");
+            
+            if (cleanDate.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                return cleanDate; // Already in standard format
+            } else if (cleanDate.matches("\\d{1,2}-\\d{1,2}-\\d{4}")) {
+                // Convert DD-MM-YYYY to YYYY-MM-DD
+                String[] parts = cleanDate.split("-");
+                String day = parts[0].length() == 1 ? "0" + parts[0] : parts[0];
+                String month = parts[1].length() == 1 ? "0" + parts[1] : parts[1];
+                return parts[2] + "-" + month + "-" + day;
+            }
+            return cleanDate;
+        } catch (Exception e) {
+            return dateInput; // Return original if conversion fails
+        }
+    }
+    
+    
     private String handleProfessionalData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
         System.out.println("Professional Data - Field: " + currentField + ", Input: " + inputText);
@@ -1830,15 +1890,31 @@ public class ussdcontroller {
     }
 
     private boolean isValidDateOfBirth(String dateStr) {
-        try {
-            LocalDate date = LocalDate.parse(dateStr);
-            LocalDate now = LocalDate.now();
-            LocalDate minDate = now.minusYears(100); // No one older than 100
-            return !date.isAfter(now) && !date.isBefore(minDate);
-        } catch (Exception e) {
+    if (dateStr == null || dateStr.trim().isEmpty()) {
+        return false;
+    }
+    
+    try {
+        String cleanDate = dateStr.trim().replace("/", "-").replace(".", "-");
+        LocalDate date;
+        
+        if (cleanDate.matches("\\d{4}-\\d{2}-\\d{2}")) {
+            date = LocalDate.parse(cleanDate);
+        } else if (cleanDate.matches("\\d{1,2}-\\d{1,2}-\\d{4}")) {
+            String[] parts = cleanDate.split("-");
+            String day = parts[0].length() == 1 ? "0" + parts[0] : parts[0];
+            String month = parts[1].length() == 1 ? "0" + parts[1] : parts[1];
+            date = LocalDate.parse(parts[2] + "-" + month + "-" + day);
+        } else {
             return false;
         }
+        
+        LocalDate now = LocalDate.now();
+        return !date.isAfter(now) && !date.isBefore(now.minusYears(100));
+    } catch (Exception e) {
+        return false; // Simplified error handling
     }
+}
 
     private boolean isValidMaritalStatus(String status) {
         if (status == null)
@@ -1875,55 +1951,64 @@ public class ussdcontroller {
     }
 
     // handle duplicate requests
-    private boolean isDuplicateRequest(String phoneNumber, String inputedText) {
-        try {
-            String Requestkey = phoneNumber + ":last_request";
-            String currentRequest = phoneNumber + (inputedText != null ? inputedText : "");
-            String last_request = (String) redisTemplate.opsForValue().get(Requestkey);
-            Long currentTime = System.currentTimeMillis();
-            if (currentRequest.equals(last_request)) {
-                // get timekey
-                String timekey = phoneNumber + ":last_request_time";
-                // get last time from timekey
-                Long lastime = (Long) redisTemplate.opsForValue().get(timekey);
-                // Check if this is the same request within 3 seconds
-                if (lastime != null && (currentTime - lastime) < 3000) {
-                    return true; // meaning its a duplicate
-                }
-                // store current request
-                redisTemplate.opsForValue().set(Requestkey, currentRequest, 10, TimeUnit.MINUTES);
-                // store last request time
-                redisTemplate.opsForValue().set(phoneNumber + ":last_request_time", currentTime, 10, TimeUnit.MINUTES);
-                return false;
-            }
-            // Store the new request
-            redisTemplate.opsForValue().set(Requestkey, currentRequest, 10, TimeUnit.MINUTES);
-            // Store the current time
-            redisTemplate.opsForValue().set(phoneNumber + ":last_request_time", currentTime, 10, TimeUnit.MINUTES);
-            return false; // not a duplicate
-        } catch (Exception e) {
-            System.err.println("Error checking duplicate request: " + e.getMessage());
-            return false;
-        }
-    }
-    private boolean acquireUserlock(String phoneNumber) {
-        try {
-            String lockKey = phoneNumber + ":processing_lock";
-            Boolean lockAcquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "locked", 30, TimeUnit.SECONDS);
-            return Boolean.TRUE.equals(lockAcquired);
-        } catch (Exception e) {
-            System.err.println("Error acquiring user lock: " + e.getMessage());
-            return false;
-        }
-    }
-    private void releaseUserLock(String phoneNumber) {
-        try {
-            String lockKey = phoneNumber + ":processing_lock";
-            redisTemplate.delete(lockKey);
-        } catch (Exception e) {
-            System.err.println("Error releasing user lock: " + e.getMessage());
-        }
-    }
+    // private boolean isDuplicateRequest(String phoneNumber, String inputedText) {
+    //     try {
+    //         String Requestkey = phoneNumber + ":last_request";
+    //         String currentRequest = phoneNumber + (inputedText != null ? inputedText : "");
+    //         String last_request = (String) redisTemplate.opsForValue().get(Requestkey);
+    //         Long currentTime = System.currentTimeMillis();
+    //         if (currentRequest.equals(last_request)) {
+    //             // get timekey
+    //             String timekey = phoneNumber + ":last_request_time";
+    //             // get last time from timekey
+    //             Long lastime = (Long) redisTemplate.opsForValue().get(timekey);
+    //             // Check if this is the same request within 3 seconds
+    //             if (lastime != null && (currentTime - lastime) < 3000) {
+    //                 return true; // meaning its a duplicate
+    //             }
+    //             // store current request
+    //             redisTemplate.opsForValue().set(Requestkey, currentRequest, 10, TimeUnit.MINUTES);
+    //             // store last request time
+    //             redisTemplate.opsForValue().set(phoneNumber + ":last_request_time", currentTime, 10, TimeUnit.MINUTES);
+    //             return false;
+    //         }
+    //         // Store the new request
+    //         redisTemplate.opsForValue().set(Requestkey, currentRequest, 10, TimeUnit.MINUTES);
+    //         // Store the current time
+    //         redisTemplate.opsForValue().set(phoneNumber + ":last_request_time", currentTime, 10, TimeUnit.MINUTES);
+    //         return false; // not a duplicate
+    //     } catch (Exception e) {
+    //         System.err.println("Error checking duplicate request: " + e.getMessage());
+    //         return false;
+    //     }
+    // }
+    // private boolean acquireUserLock(String phoneNumber) {
+    //     try {
+    //         String lockKey = phoneNumber + ":processing_lock";
+    //         // ISSUE: 5 seconds is too long for USSD responses
+    //         // FIX: Reduce to 2 seconds max
+    //         Boolean lockAcquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "locked", 2, TimeUnit.SECONDS);
+            
+    //         if (!Boolean.TRUE.equals(lockAcquired)) {
+    //             // OPTIMIZATION: Log and return immediately instead of waiting
+    //             System.out.println("Lock not acquired for: " + phoneNumber + " - another request in progress");
+    //         }
+    //         return Boolean.TRUE.equals(lockAcquired);
+    //     } catch (Exception e) {
+    //         System.err.println("Error acquiring user lock: " + e.getMessage());
+    //         // CRITICAL: Return true to avoid blocking on Redis errors
+    //         return true;
+    //     }
+
+    // }
+    // private void releaseUserLock(String phoneNumber) {
+    //     try {
+    //         String lockKey = phoneNumber + ":processing_lock";
+    //         redisTemplate.delete(lockKey);
+    //     } catch (Exception e) {
+    //         System.err.println("Error releasing user lock: " + e.getMessage());
+    //     }
+    // }
 
     private String getFieldDisplayName(String fieldName) {
         switch (fieldName) {
