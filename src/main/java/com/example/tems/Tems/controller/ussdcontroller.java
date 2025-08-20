@@ -6,8 +6,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import com.example.tems.Tems.Session.RedisConfig;
 import com.example.tems.Tems.model.FhisEnrollment;
+import com.example.tems.Tems.model.Hospital;
 import com.example.tems.Tems.model.Organization;
 import com.example.tems.Tems.repository.FhisEnrollmentRepository;
+import com.example.tems.Tems.repository.HospitalRepository;
 import com.example.tems.Tems.repository.OrganizationRepository;
 import com.example.tems.Tems.service.AggregatorService;
 import com.example.tems.Tems.service.SubscriptionService;
@@ -35,17 +37,20 @@ public class ussdcontroller {
     // private AggregatorService aggregatorService;
     // private SubscriptionService subscriptionService;
     private FhisEnrollmentRepository FhisEnrollmentRepository;
+    private final HospitalRepository hospitalRepository;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository) {
         this.organizationRepository = organizationRepository;
         // this.aggregatorService = aggregatorService;
         // this.subscriptionService = subscriptionService;
         this.FhisEnrollmentRepository = FhisEnrollmentRepository;
+        this.hospitalRepository = hospitalRepository;
+        
     }
 
     @PostMapping(
@@ -318,7 +323,7 @@ public class ussdcontroller {
                 if ("1".equals(choice)) {
                     return handleFHISEnrollment(org, phone);
                 } else if ("2".equals(choice)) {
-                    return "CON Change Hospital - Coming Soon\n0. Back to menu";
+                    return handleChangeHospital(phone); // Handle change hospital
                 } else if ("0".equals(choice)) {
                     return showorgmenu(org); // Back to main org menu
                 } else {
@@ -395,11 +400,55 @@ public class ussdcontroller {
     // FIXED: Added phone parameter
     private String showMoreOptions(Organization org, String phone) {
         saveToSession(phone, "currentSubMenu", "more_info");
-        return "CON " + org.getName() + " - More Info:\n" +
-                "1. Enroll\n" +
-                "2. Change Hospital\n" +
-                "0. Back to menu";
+        String orgName = org.getName().toUpperCase();
+        
+        if (orgName.contains("FHIS") || orgName.contains("FCT HEALTH")) {
+            return "CON " + org.getName() + " - More Info:\n" +
+                    "1. Enroll\n" +
+                    "2. Change Hospital\n" +
+                    "0. Back to menu";
+        } else {
+            return "CON " + org.getName() + " - More Info:\n" +
+                    "No additional services available.\n" +
+                    "0. Back to menu";
+        }
     }
+    // handle change hospital
+    private String handleChangeHospital(String phone) {
+        // Check if user has an enrollment
+        Optional<FhisEnrollment> existingEnrollment = FhisEnrollmentRepository.findByPhoneNumber(phone);
+        
+        if (!existingEnrollment.isPresent()) {
+            return "END No FHIS enrollment found. Please enroll first.";
+        }
+        
+        FhisEnrollment enrollment = existingEnrollment.get();
+        if (enrollment.getHospital() == null) {
+            return "END No hospital assigned yet. Please complete your enrollment first.";
+        }
+        
+        // Show current hospital and options
+        Hospital currentHospital = enrollment.getHospital();
+        String currentHospitalInfo = currentHospital.getName();
+        if (currentHospital.getLocation() != null && !currentHospital.getLocation().isEmpty()) {
+            currentHospitalInfo += " (" + currentHospital.getLocation() + ")";
+        }
+        
+        saveToSession(phone, "currentFlow", "change_hospital");
+        saveToSession(phone, "hospitalSearchPage", 0);
+        
+        return "CON Current Hospital: " + currentHospitalInfo + "\n\n" +
+               "Search for new hospital:\n" +
+               "1. Search by name\n" +
+               "2. Browse by location\n" +
+               "3. View all hospitals\n" +
+               "0. Back to menu";
+    }
+
+    
+
+    
+    
 
     private String handleMoreResults(String phone) {
         String searchTerm = (String) retrieveFromSession(phone, "searchTerm");
@@ -707,7 +756,7 @@ public class ussdcontroller {
                 if ("Informal".equals(enrollment.getEnrollmentType())) {
                     if (enrollment.getNinNumber() == null) return "ninNumber";
                     if (enrollment.getTelephoneNumber() == null) return "telephoneNumber";
-                    if (enrollment.getOrganizationname() == null) return "organizationName";
+                    if (enrollment.getOrganizationName() == null) return "organizationName";
                 }
                 break;
                 
@@ -728,9 +777,8 @@ public class ussdcontroller {
                 break;
                 
             case "healthcare_provider_data":
-                if (enrollment.getHospitalName() == null) return "hospitalName";
-                if (enrollment.getHospitalLocation() == null) return "hospitalLocation";
-                if (enrollment.getHospitalCodeNo() == null) return "hospitalCodeNo";
+                // Changed to use JPA relationship
+                if (enrollment.getHospital() == null) return "hospitalSearch";
                 break;
         }
         return null;
@@ -1457,7 +1505,7 @@ public class ussdcontroller {
         switch (currentField) {
             case "maritalStatus":
                 if (!isValidMaritalStatus(lastChoice.trim())) {
-                    return "CON Invalid marital status. Please enter Single, Married, Divorced, or Widowed:";
+                    return "CON Invalid marital status.\nPlease enter Single, Married, Divorced, or Widowed:";
                 }
                 enrollment.setMaritalStatus(lastChoice.trim());
                 FhisEnrollmentRepository.save(enrollment);
@@ -1561,7 +1609,7 @@ public class ussdcontroller {
                        
             case "dependants_data":
                 enrollment.setCurrentStep("healthcare_provider_data");
-                saveToSession(phone, "currentField", "hospitalName");
+                saveToSession(phone, "currentField", "hospitalSearch"); 
                 FhisEnrollmentRepository.save(enrollment);
                 saveToSession(phone, "waitingForContinue", false);
                 return "CON ✓ Dependants Information Complete!\n" +
@@ -1571,6 +1619,7 @@ public class ussdcontroller {
                        
             case "corporate_data":
             case "healthcare_provider_data":
+                
                 enrollment.setCurrentStep("completed");
                 enrollment.setUpdatedAt(LocalDateTime.now());
                 FhisEnrollmentRepository.save(enrollment);
@@ -1596,51 +1645,291 @@ public class ussdcontroller {
         return "next section";
     }
         
+    // private String handleHealthcareProviderData(String phone, String inputText, FhisEnrollment enrollment) {
+    //     String currentField = (String) retrieveFromSession(phone, "currentField");
+
+    //     String lastinput = "";
+    //     if (inputText != null && !inputText.isEmpty()) {
+    //         String[] parts = inputText.split("\\*");
+    //         lastinput = parts.length > 0 ? parts[parts.length - 1] : "";
+    //     }
+        
+    //     if (currentField == null) {
+    //         currentField = "hospitalName";
+    //         saveToSession(phone, "currentField", currentField);
+    //     }
+    //     if (lastinput == null || lastinput.trim().isEmpty()) {
+    //         return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
+    //     }
+    
+    //     if (inputText == null || inputText.trim().isEmpty()) {
+    //         return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
+    //     }
+    
+    //     switch (currentField) {
+    //         case "hospitalName":
+    //             enrollment.setHospitalName(lastinput.trim());
+    //             FhisEnrollmentRepository.save(enrollment);
+    //             saveToSession(phone, "currentField", "hospitalLocation");
+    //             return "CON Enter Hospital Location:";
+                
+    //         case "hospitalLocation":
+    //             enrollment.setHospitalLocation(lastinput.trim());
+    //             FhisEnrollmentRepository.save(enrollment);
+    //             saveToSession(phone, "currentField", "hospitalCodeNo");
+    //             return "CON Enter Hospital Code Number:";
+                
+    //         case "hospitalCodeNo":
+
+    //             enrollment.setHospitalCodeNo(lastinput.trim());
+    //             enrollment.setUpdatedAt(LocalDateTime.now());
+    //             FhisEnrollmentRepository.save(enrollment);
+    //             return moveToNextStage(phone, enrollment);
+                
+    //         default:
+    //             return "END Invalid field. Please start over.";
+    //     }
+    // }
     private String handleHealthcareProviderData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
-
-        String lastinput = "";
+        String lastInput = "";
+        
         if (inputText != null && !inputText.isEmpty()) {
             String[] parts = inputText.split("\\*");
-            lastinput = parts.length > 0 ? parts[parts.length - 1] : "";
+            lastInput = parts.length > 0 ? parts[parts.length - 1] : "";
         }
         
         if (currentField == null) {
-            currentField = "hospitalName";
+            currentField = "hospitalSearch";
             saveToSession(phone, "currentField", currentField);
         }
-        if (lastinput == null || lastinput.trim().isEmpty()) {
-            return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
-        }
-    
-        if (inputText == null || inputText.trim().isEmpty()) {
-            return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
-        }
-    
+        
         switch (currentField) {
-            case "hospitalName":
-                enrollment.setHospitalName(lastinput.trim());
-                FhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "hospitalLocation");
-                return "CON Enter Hospital Location:";
+            case "hospitalSearch":
+                if (lastInput == null || lastInput.trim().isEmpty()) {
+                    return "CON Enter hospital name to search\n(or type 'list' to see all):";
+                }
                 
-            case "hospitalLocation":
-                enrollment.setHospitalLocation(lastinput.trim());
-                FhisEnrollmentRepository.save(enrollment);
-                saveToSession(phone, "currentField", "hospitalCodeNo");
-                return "CON Enter Hospital Code Number:";
+                if ("list".equalsIgnoreCase(lastInput.trim())) {
+                    return showHospitalList(phone, 0);
+                } else {
+                    return searchHospitals(phone, lastInput.trim());
+                }
                 
-            case "hospitalCodeNo":
-
-                enrollment.setHospitalCodeNo(lastinput.trim());
-                enrollment.setUpdatedAt(LocalDateTime.now());
-                FhisEnrollmentRepository.save(enrollment);
-                return moveToNextStage(phone, enrollment);
+            case "hospitalSelection":
+                return handleHospitalSelection(phone, lastInput, enrollment);
+            
+            case "hospitalConfirmation":
+                return handleHospitalConfirmation(phone, lastInput, enrollment);
                 
             default:
                 return "END Invalid field. Please start over.";
         }
     }
+    private String handleHospitalConfirmation(String phone, String choice, FhisEnrollment enrollment) {
+        if ("1".equals(choice)) {
+            Long pendingHospitalId = getLongFromSession(phone, "pendingHospitalId");
+            if (pendingHospitalId == null) {
+                return "CON No hospital selected. Please try again.";
+            }
+    
+            Optional<Hospital> hospitalOpt = hospitalRepository.findById(pendingHospitalId);
+            if (!hospitalOpt.isPresent()) {
+                return "CON Hospital not found. Please try again.";
+            }
+    
+            // Finalize hospital selection
+            enrollment.setHospital(hospitalOpt.get());
+            enrollment.setUpdatedAt(LocalDateTime.now());
+            FhisEnrollmentRepository.save(enrollment);
+    
+            // Clear pending selection
+            saveToSession(phone, "pendingHospitalId", null);
+    
+            // Move to completion
+            return moveToNextStage(phone, enrollment); // This will go to "completed" step
+        } 
+        else if ("0".equals(choice)) {
+            // Go back to hospital selection
+            saveToSession(phone, "currentField", "hospitalSearch");
+            return showHospitalList(phone, 0);
+        } 
+        else {
+            return "CON Invalid choice:\n1. Confirm Selection\n0. Back to List";
+        }
+    }
+    private String showHospitalList(String phone, int page) {
+        try {
+            Pageable pageable = PageRequest.of(page, 5);
+            Page<Hospital> hospitals = hospitalRepository.findAll(pageable);
+            
+            if (hospitals.isEmpty()) {
+                return "END No hospitals found.";
+            }
+            
+            saveToSession(phone, "hospitalPage", page);
+            saveToSession(phone, "totalHospitalPages", (int) hospitals.getTotalPages());
+            saveToSession(phone, "currentField", "hospitalSelection");
+            
+            // Store hospital IDs for this page
+            List<Long> hospitalIds = hospitals.getContent().stream()
+                    .map(Hospital::getId)
+                    .collect(Collectors.toList());
+            saveToSession(phone, "hospital_ids", hospitalIds);
+            
+            StringBuilder menu = new StringBuilder("CON Select Hospital:\n");
+            int count = 1;
+            
+            for (Hospital hospital : hospitals.getContent()) {
+                menu.append(count).append(". ").append(hospital.getName())
+                    .append(" (").append(hospital.getLocation()).append(")\n");
+                count++;
+            }
+            
+            if (page < hospitals.getTotalPages() - 1) {
+                menu.append("6. Next Page\n");
+            }
+            if (page > 0) {
+                menu.append("7. Previous Page\n");
+            }
+            menu.append("0. Back");
+            
+            return menu.toString();
+            
+        } catch (Exception e) {
+            System.err.println("Error showing hospital list: " + e.getMessage());
+            return "END Error loading hospitals. Please try again.";
+        }
+    }
+    private String searchHospitals(String phone, String searchTerm) {
+        try {
+            Pageable pageable = PageRequest.of(0, 5);
+            Page<Hospital> hospitals = hospitalRepository.searchActiveHospitals(searchTerm, pageable);
+            
+            if (hospitals.isEmpty()) {
+                return "CON No hospitals found for: " + searchTerm + 
+                       "\n\nTry different keywords or:\n" +
+                       "1. View all hospitals\n" +
+                       "0. Back";
+            }
+            
+            saveToSession(phone, "hospitalSearchTerm", searchTerm);
+            saveToSession(phone, "hospitalPage", 0);
+            saveToSession(phone, "totalHospitalPages", (int) hospitals.getTotalPages());
+            saveToSession(phone, "currentField", "hospitalSelection");
+            
+            List<Long> hospitalIds = hospitals.getContent().stream()
+                    .map(Hospital::getId)
+                    .collect(Collectors.toList());
+            saveToSession(phone, "hospital_ids", hospitalIds);
+            
+            StringBuilder menu = new StringBuilder("CON Found " + hospitals.getTotalElements() + " hospitals:\n");
+            int count = 1;
+            
+            for (Hospital hospital : hospitals.getContent()) {
+                menu.append(count).append(". ").append(hospital.getName())
+                    .append(" (").append(hospital.getLocation()).append(")\n");
+                count++;
+            }
+            
+            if (hospitals.getTotalPages() > 1) {
+                menu.append("6. More results\n");
+            }
+            menu.append("0. Back");
+            
+            return menu.toString();
+            
+        } catch (Exception e) {
+            System.err.println("Error searching hospitals: " + e.getMessage());
+            return "END Error searching hospitals. Please try again.";
+        }
+    }
+    private String handleHospitalSelection(String phone, String choice, FhisEnrollment enrollment) {
+        try {
+            List<Long> hospitalIds = getHospitalIdsFromSession(phone);
+            
+            if (hospitalIds == null || hospitalIds.isEmpty()) {
+                return "END Session expired. Please start over.";
+            }
+            
+            int selection = Integer.parseInt(choice);
+            
+            if (selection == 0) {
+                return moveToNextStage(phone, enrollment);
+            }
+            
+            if (selection >= 1 && selection <= Math.min(hospitalIds.size(), 5)) {
+                Long selectedHospitalId = hospitalIds.get(selection - 1);
+                Optional<Hospital> hospitalOpt = hospitalRepository.findById(selectedHospitalId);
+                
+                if (!hospitalOpt.isPresent()) {
+                    return "CON Hospital not found. Please try again:";
+                }
+                
+                Hospital selectedHospital = hospitalOpt.get();
+                
+                // Update enrollment with selected hospital using JPA relationship
+                enrollment.setHospital(selectedHospital);
+                enrollment.setUpdatedAt(LocalDateTime.now());
+                FhisEnrollmentRepository.save(enrollment);
+                
+                return "CON Hospital Selected: " + selectedHospital.getName() + 
+                       "\nLocation: " + selectedHospital.getLocation() + 
+                       "\n\n1. Confirm Selection\n0. Choose Different Hospital";
+            }
+            
+            // Handle pagination
+            if (selection == 6) {
+                return handleHospitalPagination(phone, "next");
+            } else if (selection == 7) {
+                return handleHospitalPagination(phone, "previous");
+            }
+            
+            return "CON Invalid selection. Please choose a number between 1-" + 
+                   Math.min(hospitalIds.size(), 5) + ":";
+                   
+        } catch (NumberFormatException e) {
+            return "CON Invalid input. Please enter a number:";
+        } catch (Exception e) {
+            System.err.println("Error in hospital selection: " + e.getMessage());
+            return "END Error processing selection. Please try again.";
+        }
+    }
+
+    private List<Long> getHospitalIdsFromSession(String phone) {
+        List<?> rawList = (List<?>) retrieveFromSession(phone, "hospital_ids");
+        if (rawList == null) return null;
+        
+        return rawList.stream()
+                .map(obj -> {
+                    if (obj instanceof Integer) {
+                        return ((Integer) obj).longValue();
+                    } else if (obj instanceof Long) {
+                        return (Long) obj;
+                    } else {
+                        throw new ClassCastException("Unexpected type in hospital_ids");
+                    }
+                })
+                .collect(Collectors.toList());
+    }
+    private String handleHospitalPagination(String phone, String direction) {
+        Integer currentPage = (Integer) retrieveFromSession(phone, "hospitalPage");
+        Integer totalPages = (Integer) retrieveFromSession(phone, "totalHospitalPages");
+        
+        if (currentPage == null || totalPages == null) {
+            return "END Session expired. Please start over.";
+        }
+        
+        int newPage = currentPage;
+        if ("next".equals(direction) && currentPage < totalPages - 1) {
+            newPage = currentPage + 1;
+        } else if ("previous".equals(direction) && currentPage > 0) {
+            newPage = currentPage - 1;
+        }
+        
+        return showHospitalList(phone, newPage);
+    }
+    
     private String handleDependantsData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
         
@@ -1801,11 +2090,28 @@ public class ussdcontroller {
 
 
     private String showEnrollmentSummary(FhisEnrollment enrollment) {
-        return "REVIEW:\n" +
-                "Name: " + enrollment.getTitle() + " " + enrollment.getFirstName() + " " + enrollment.getSurname() + "\n" +
-                "FHIS: " + enrollment.getFhisNo() + "\n" +
-                "Email: " + enrollment.getEmail() + "\n" +
-                "Phone: " + enrollment.getTelephoneNumber();
+        StringBuilder summary = new StringBuilder();
+        summary.append("REVIEW:\n");
+        
+        if (enrollment.getTitle() != null) {
+            summary.append("Name: ").append(enrollment.getTitle()).append(" ");
+        } else {
+            summary.append("Name: ");
+        }
+        summary.append(enrollment.getFirstName()).append(" ").append(enrollment.getSurname()).append("\n");
+        summary.append("FHIS: ").append(enrollment.getFhisNo()).append("\n");
+        summary.append("Email: ").append(enrollment.getEmail()).append("\n");
+        summary.append("Phone: ").append(enrollment.getTelephoneNumber());
+        
+        // Add hospital info if available
+        if (enrollment.getHospital() != null) {
+            summary.append("\nHospital: ").append(enrollment.getHospital().getName());
+            if (enrollment.getHospital().getLocation() != null) {
+                summary.append(" (").append(enrollment.getHospital().getLocation()).append(")");
+            }
+        }
+        
+        return summary.toString();
     }
 
     

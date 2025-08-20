@@ -75,3 +75,36 @@ SELECT column_name, data_type, is_nullable, character_maximum_length
 FROM information_schema.columns 
 WHERE table_name = 'fhis_enrollment' 
 ORDER BY ordinal_position;
+
+
+-- Hospital Model Schema
+CREATE TABLE IF NOT EXISTS hospital (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    code_no VARCHAR(50) UNIQUE NOT NULL,
+    location VARCHAR(255),
+    address TEXT,
+    phone_number VARCHAR(255),
+    services VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create index for faster searches
+CREATE INDEX IF NOT EXISTS idx_hospital_name ON hospital(name);
+CREATE INDEX IF NOT EXISTS idx_hospital_code_no ON hospital(code_no);  -- Updated index name
+CREATE INDEX IF NOT EXISTS idx_hospital_location ON hospital(location);
+CREATE INDEX IF NOT EXISTS idx_hospital_active ON hospital(is_active);
+
+-- Update FHIS enrollment table to reference hospital
+ALTER TABLE fhis_enrollment
+DROP COLUMN IF EXISTS hospital_name,
+DROP COLUMN IF EXISTS hospital_location,
+DROP COLUMN IF EXISTS hospital_code_no;
+
+ALTER TABLE fhis_enrollment
+ADD COLUMN IF NOT EXISTS hospital_id BIGINT REFERENCES hospital(id);
+
+-- Create index for hospital reference
+CREATE INDEX IF NOT EXISTS idx_fhis_enrollment_hospital ON fhis_enrollment(hospital_id);

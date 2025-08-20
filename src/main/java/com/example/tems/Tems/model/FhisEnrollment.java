@@ -11,15 +11,6 @@ public class FhisEnrollment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "title")
-    private String title;
-
-    @Column(name = "nin_number") 
-    private String ninNumber;
-
-    @Column(name = "organization_name")
-    private String organizationName;
-
     // Common fields
     @Column(name = "phone_number", nullable = false, unique = true)
     private String phoneNumber;
@@ -40,6 +31,9 @@ public class FhisEnrollment {
     @Column(name = "fhis_no")
     private String fhisNo;
 
+    @Column(name = "title")
+    private String title;
+
     @Column(name = "surname")
     private String surname;
 
@@ -59,6 +53,12 @@ public class FhisEnrollment {
     private String bloodGroup;
 
     // Professional Data
+    @Column(name = "nin_number")
+    private String ninNumber;
+
+    @Column(name = "organization_name")
+    private String organizationName;
+
     @Column(name = "designation")
     private String designation;
 
@@ -90,62 +90,17 @@ public class FhisEnrollment {
     @Column(name = "email")
     private String email;
 
-    // Simplified Dependants: Just number of children
+    // Dependants
     @Column(name = "number_of_children")
     private Integer numberOfChildren;
 
-    // Healthcare Provider
-    @Column(name = "hospital_name")
-    private String hospitalName;
-
-    @Column(name = "hospital_location")
-    private String hospitalLocation;
-
-    @Column(name = "hospital_code_no")
-    private String hospitalCodeNo;
+    // Healthcare Provider (Relation)
+    @ManyToOne
+    @JoinColumn(name = "hospital_id", referencedColumnName = "id")
+    private Hospital hospital;
 
     // Constructors
     public FhisEnrollment() {}
-
-    public FhisEnrollment(String phoneNumber, String enrollmentType, String currentStep,
-                                LocalDateTime createdAt, LocalDateTime updatedAt, String fhisNo,
-                                String surname, String firstName, String middleName, String dateOfBirth,
-                                String sex, String bloodGroup, String designation, String occupation,
-                                String presentStation, String rank, String pfNumber, String sdaName,
-                                String maritalStatus, String telephoneNumber, String residentialAddress,
-                                String email, Integer numberOfChildren, String hospitalName,
-                                String hospitalLocation, String hospitalCodeNo,
-                                String title, String ninNumber, String organization_name) {
-        this.phoneNumber = phoneNumber;
-        this.enrollmentType = enrollmentType;
-        this.currentStep = currentStep;
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
-        this.fhisNo = fhisNo;
-        this.surname = surname;
-        this.firstName = firstName;
-        this.middleName = middleName;
-        this.dateOfBirth = dateOfBirth;
-        this.sex = sex;
-        this.bloodGroup = bloodGroup;
-        this.designation = designation;
-        this.occupation = occupation;
-        this.presentStation = presentStation;
-        this.rank = rank;
-        this.pfNumber = pfNumber;
-        this.sdaName = sdaName;
-        this.maritalStatus = maritalStatus;
-        this.telephoneNumber = telephoneNumber;
-        this.residentialAddress = residentialAddress;
-        this.email = email;
-        this.numberOfChildren = numberOfChildren;
-        this.hospitalName = hospitalName;
-        this.hospitalLocation = hospitalLocation;
-        this.hospitalCodeNo = hospitalCodeNo;
-        this.ninNumber = ninNumber;
-        this.organizationName = organization_name;
-        this.title = title;
-    }
 
     // Getters and Setters
     public Long getId() { return id; }
@@ -169,6 +124,9 @@ public class FhisEnrollment {
     public String getFhisNo() { return fhisNo; }
     public void setFhisNo(String fhisNo) { this.fhisNo = fhisNo; }
 
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+
     public String getSurname() { return surname; }
     public void setSurname(String surname) { this.surname = surname; }
 
@@ -186,6 +144,12 @@ public class FhisEnrollment {
 
     public String getBloodGroup() { return bloodGroup; }
     public void setBloodGroup(String bloodGroup) { this.bloodGroup = bloodGroup; }
+
+    public String getNinNumber() { return ninNumber; }
+    public void setNinNumber(String ninNumber) { this.ninNumber = ninNumber; }
+
+    public String getOrganizationName() { return organizationName; }
+    public void setOrganizationName(String organizationName) { this.organizationName = organizationName; }
 
     public String getDesignation() { return designation; }
     public void setDesignation(String designation) { this.designation = designation; }
@@ -220,23 +184,8 @@ public class FhisEnrollment {
     public Integer getNumberOfChildren() { return numberOfChildren; }
     public void setNumberOfChildren(Integer numberOfChildren) { this.numberOfChildren = numberOfChildren; }
 
-    public String getHospitalName() { return hospitalName; }
-    public void setHospitalName(String hospitalName) { this.hospitalName = hospitalName; }
-
-    public String getHospitalLocation() { return hospitalLocation; }
-    public void setHospitalLocation(String hospitalLocation) { this.hospitalLocation = hospitalLocation; }
-
-    public String getHospitalCodeNo() { return hospitalCodeNo; }
-    public void setHospitalCodeNo(String hospitalCodeNo) { this.hospitalCodeNo = hospitalCodeNo; }
-
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
-
-    public String getNinNumber() { return ninNumber; }
-    public void setNinNumber(String ninNumber) { this.ninNumber = ninNumber; }
-
-    public String getOrganizationname() { return organizationName; }
-    public void setOrganizationName(String OrganizationName) { this.organizationName = OrganizationName; }
+    public Hospital getHospital() { return hospital; }
+    public void setHospital(Hospital hospital) { this.hospital = hospital; }
 
     @Override
     public String toString() {
@@ -250,6 +199,7 @@ public class FhisEnrollment {
                 ", surname='" + surname + '\'' +
                 ", email='" + email + '\'' +
                 ", numberOfChildren=" + numberOfChildren +
+                ", hospital=" + (hospital != null ? hospital.getName() : "null") +
                 '}';
     }
 }
