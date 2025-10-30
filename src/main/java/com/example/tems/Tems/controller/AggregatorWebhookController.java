@@ -45,7 +45,6 @@ public class AggregatorWebhookController {
             return ResponseEntity.badRequest().body("Phone number missing");
         }
         String cleanNumber = normalizePhoneNumber(rawPhone);
-        
         // Log the normalized phone number
         System.out.println("Normalized Phone Number: " + cleanNumber);
         // Here you can add logic to handle the notification, such as saving it to a database
