@@ -47,6 +47,11 @@ public class DatabaseConfig {
         }
 
         // Fallback for local development
-        return new com.zaxxer.hikari.HikariDataSource();
+        com.zaxxer.hikari.HikariDataSource fallback = new com.zaxxer.hikari.HikariDataSource();
+        fallback.setJdbcUrl("jdbc:postgresql://localhost:5432/tems");
+        fallback.setUsername("faisal");
+        fallback.setPassword("");
+        fallback.setDriverClassName("org.postgresql.Driver");
+        return fallback;
     }
 }
