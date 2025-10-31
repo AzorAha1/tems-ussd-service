@@ -17,32 +17,32 @@ public class DatabaseConfig {
     @Primary
     @ConfigurationProperties("spring.datasource")
     public DataSource dataSource() {
-        String databaseUrl = System.getenv("DATABASE_URL");
-        if (databaseUrl != null && !databaseUrl.isEmpty()) {
+        String dbUrl = System.getenv("DATABASE_URL");
+        if (dbUrl != null && !dbUrl.isEmpty()) {
             try {
-                URI uri = new URI(databaseUrl);
+                URI uri = new URI(dbUrl);
                 String host = uri.getHost();
                 int port = uri.getPort();
                 String dbName = uri.getPath().substring(1);
-                String[] userInfo = uri.getUserInfo().split(":");
-                String username = userInfo[0];
-                String password = userInfo.length > 1 ? userInfo[1] : "";
+                String[] userPass = uri.getUserInfo().split(":");
+                String username = userPass[0];
+                String password = userPass.length > 1 ? userPass[1] : "";
 
-                com.zaxxer.hikari.HikariDataSource dataSource = new com.zaxxer.hikari.HikariDataSource();
-                dataSource.setJdbcUrl("jdbc:postgresql://" + host + ":" + port + "/" + dbName);
-                dataSource.setUsername(username);
-                dataSource.setPassword(password);
-                dataSource.setDriverClassName("org.postgresql.Driver");
+                com.zaxxer.hikari.HikariDataSource ds = new com.zaxxer.hikari.HikariDataSource();
+                ds.setJdbcUrl("jdbc:postgresql://" + host + ":" + port + "/" + dbName);
+                ds.setUsername(username);
+                ds.setPassword(password);
+                ds.setDriverClassName("org.postgresql.Driver");
 
                 // Required for Railway's self-signed SSL cert
                 Properties props = new Properties();
                 props.setProperty("ssl", "true");
                 props.setProperty("sslfactory", "org.postgresql.ssl.NonValidatingFactory");
-                dataSource.setDataSourceProperties(props);
+                ds.setDataSourceProperties(props);
 
-                return dataSource;
+                return ds;
             } catch (URISyntaxException e) {
-                throw new RuntimeException("Invalid DATABASE_URL", e);
+                throw new RuntimeException("Invalid DATABASE_URL: " + dbUrl, e);
             }
         }
 
