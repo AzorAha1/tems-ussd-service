@@ -50,27 +50,27 @@
 -- ('Federal Capital Territory Administration', 'FCTA', 'PLOT 1, KAPITAL STREET, AREA 11, GARKI, PMB 24, FCT ABUJA, NIGERIA', '08099936312, 07080631500', 'THE PROVISION OF INFRASTRUCTURE, SEVICES AND ADMINISTRATION FOR THE DEVELOOPMENT OF A FIRST CLASS FEDERAL CAPITAL TERRITORY COMPARABLE TO THE BEST IN THE WORLD'),
 -- ('FCT HEALTH INSURANCE SCHEME', 'FHIS', 'Head Office - No.5 Portharcourt Crescent, Off Gimbiya Street, Opp. Residency Hotel, Area 11, Garki, Abuja.', '07042244000', 'sustainable access to quality healthcare and financial protection for all FCT residents');
 
-DELETE FROM organization a USING (
-    SELECT MIN(id) as id, initials
-    FROM organization
-    GROUP BY initials
-    HAVING COUNT(*) > 1
-) b
-WHERE a.initials = b.initials AND a.id != b.id;
--- INSERT INTO hospital (name, code_no, location, address, phone_number, services) VALUES
--- ('National Hospital Abuja', 'NHA001', 'Central Area', 'Plot 132, Central District, Abuja', '09-4612345', 'General Medicine, Surgery, Emergency, Cardiology'),
--- ('University of Abuja Teaching Hospital', 'UATH001', 'Gwagwalada', 'PMB 228, Gwagwalada, Abuja', '09-2904567', 'Teaching Hospital, Specialist Care, Research'),
--- ('Garki Hospital', 'GH001', 'Garki', 'Plot 1, Garki District, Abuja', '09-4667890', 'General Medicine, Pediatrics, Maternity'),
--- ('Wuse General Hospital', 'WGH001', 'Wuse', 'Plot 20, Wuse Zone 3, Abuja', '09-5234567', 'General Medicine, Emergency, Outpatient'),
--- ('Asokoro District Hospital', 'ADH001', 'Asokoro', 'Plot 5, Asokoro District, Abuja', '09-3145678', 'General Medicine, Family Health'),
--- ('Nyanya General Hospital', 'NGH001', 'Nyanya', 'Nyanya-Karu Road, Abuja', '09-6789012', 'General Medicine, Emergency, Laboratory'),
--- ('Kubwa General Hospital', 'KGH001', 'Kubwa', 'Phase 4, Kubwa, Abuja', '09-7890123', 'General Medicine, Pediatrics, Dental'),
--- ('Gwarinpa General Hospital', 'GGH001', 'Gwarinpa', 'Estate Road, Gwarinpa, Abuja', '09-8901234', 'General Medicine, Surgery, Pharmacy'),
--- ('Kuje General Hospital', 'KJH001', 'Kuje', 'Kuje Area Council, Abuja', '09-9012345', 'General Medicine, Maternity, Laboratory'),
--- ('Bwari General Hospital', 'BGH001', 'Bwari', 'Bwari Area Council, Abuja', '09-0123456', 'General Medicine, Emergency, Outpatient'),
--- ('Maitama District Hospital', 'MDH001', 'Maitama', 'Plot 15, Maitama District, Abuja', '09-1234567', 'General Medicine, Specialist Clinic'),
--- ('Utako District Hospital', 'UDH001', 'Utako', 'Plot 8, Utako District, Abuja', '09-2345678', 'General Medicine, Family Planning'),
--- ('Dutse Alhaji Hospital', 'DAH001', 'Dutse', 'Dutse-Alhaji, Bwari, Abuja', '09-3456789', 'General Medicine, Emergency'),
--- ('Lugbe General Hospital', 'LGH001', 'Lugbe', 'Airport Road, Lugbe, Abuja', '09-4567890', 'General Medicine, Maternity'),
--- ('Zuba General Hospital', 'ZGH001', 'Zuba', 'Suleja-Zuba Road, Abuja', '09-5678901', 'General Medicine, Pediatrics');
+-- DELETE FROM organization a USING (
+--     SELECT MIN(id) as id, initials
+--     FROM organization
+--     GROUP BY initials
+--     HAVING COUNT(*) > 1
+-- ) b
+-- WHERE a.initials = b.initials AND a.id != b.id;
+INSERT INTO hospital (name, code_no, location, address, phone_number, services) VALUES
+('National Hospital Abuja', 'NHA001', 'Central Area', 'Plot 132, Central District, Abuja', '09-4612345', 'General Medicine, Surgery, Emergency, Cardiology'),
+('University of Abuja Teaching Hospital', 'UATH001', 'Gwagwalada', 'PMB 228, Gwagwalada, Abuja', '09-2904567', 'Teaching Hospital, Specialist Care, Research'),
+('Garki Hospital', 'GH001', 'Garki', 'Plot 1, Garki District, Abuja', '09-4667890', 'General Medicine, Pediatrics, Maternity'),
+('Wuse General Hospital', 'WGH001', 'Wuse', 'Plot 20, Wuse Zone 3, Abuja', '09-5234567', 'General Medicine, Emergency, Outpatient'),
+('Asokoro District Hospital', 'ADH001', 'Asokoro', 'Plot 5, Asokoro District, Abuja', '09-3145678', 'General Medicine, Family Health'),
+('Nyanya General Hospital', 'NGH001', 'Nyanya', 'Nyanya-Karu Road, Abuja', '09-6789012', 'General Medicine, Emergency, Laboratory'),
+('Kubwa General Hospital', 'KGH001', 'Kubwa', 'Phase 4, Kubwa, Abuja', '09-7890123', 'General Medicine, Pediatrics, Dental'),
+('Gwarinpa General Hospital', 'GGH001', 'Gwarinpa', 'Estate Road, Gwarinpa, Abuja', '09-8901234', 'General Medicine, Surgery, Pharmacy'),
+('Kuje General Hospital', 'KJH001', 'Kuje', 'Kuje Area Council, Abuja', '09-9012345', 'General Medicine, Maternity, Laboratory'),
+('Bwari General Hospital', 'BGH001', 'Bwari', 'Bwari Area Council, Abuja', '09-0123456', 'General Medicine, Emergency, Outpatient'),
+('Maitama District Hospital', 'MDH001', 'Maitama', 'Plot 15, Maitama District, Abuja', '09-1234567', 'General Medicine, Specialist Clinic'),
+('Utako District Hospital', 'UDH001', 'Utako', 'Plot 8, Utako District, Abuja', '09-2345678', 'General Medicine, Family Planning'),
+('Dutse Alhaji Hospital', 'DAH001', 'Dutse', 'Dutse-Alhaji, Bwari, Abuja', '09-3456789', 'General Medicine, Emergency'),
+('Lugbe General Hospital', 'LGH001', 'Lugbe', 'Airport Road, Lugbe, Abuja', '09-4567890', 'General Medicine, Maternity'),
+('Zuba General Hospital', 'ZGH001', 'Zuba', 'Suleja-Zuba Road, Abuja', '09-5678901', 'General Medicine, Pediatrics');
 
