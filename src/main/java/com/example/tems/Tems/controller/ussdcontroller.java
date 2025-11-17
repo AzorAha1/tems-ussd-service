@@ -86,7 +86,7 @@ public class ussdcontroller {
     public String handleUssdRequest(
         @RequestParam(name = "text", required = false) String text,
         @RequestParam(name = "input", required = false) String input,
-        @RequestParam(name = "phoneNumber") String phoneNumber,
+        @RequestParam(name = "phoneNumber", required = false) String phoneNumber,
         @RequestParam(name = "phone", required = false) String phone,
         @RequestBody(required = false) Map<String, Object> body
         ) {
