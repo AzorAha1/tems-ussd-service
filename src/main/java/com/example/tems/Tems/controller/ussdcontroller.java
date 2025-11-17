@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
@@ -27,6 +28,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -78,11 +80,38 @@ public class ussdcontroller {
     
 
     @PostMapping(
-            value = "/ussd"
+            value = "/ussd",
+            consumes = { MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE }
     )
-    public String handleUssdRequest(@RequestParam(name = "text", required = false) String inputText, @RequestParam(name = "phoneNumber") String phoneNumber) {
+    public String handleUssdRequest(
+        @RequestParam(name = "text", required = false) String text,
+        @RequestParam(name = "input", required = false) String input,
+        @RequestParam(name = "phoneNumber") String phoneNumber,
+        @RequestParam(name = "phone", required = false) String phone,
+        @RequestBody(required = false) Map<String, Object> body
+        ) {
         try {
-            return processUssdRequest(inputText, phoneNumber);
+            if (body != null) {
+                if (phoneNumber == null && body.containsKey("phoneNumber")) {
+                    phoneNumber = body.get("phoneNumber").toString();
+                }
+                if (input == null && body.containsKey("input")) {
+                    input = body.get("input").toString();
+                }
+                if (text == null && body.containsKey("text")) {
+                    text = body.get("text").toString();
+                }
+                if (phone == null && body.containsKey("phone")) {
+                    phone = body.get("phone").toString();
+                }
+            }
+            String phonefinal = phoneNumber != null ? phoneNumber : (phone != null ? phone : "");
+            String inputfinal = input != null ? input : (text != null ? text : "");
+            if (phonefinal.isEmpty()) {
+                System.err.println("❌ Missing phone number in USSD request");
+                return "END Invalid request: missing phone number.";
+            }
+            return processUssdRequest(inputfinal, phonefinal);
         } catch (Exception e) {
             System.err.println("Fatal error in USSD request: " + e.getMessage());
             e.printStackTrace();
