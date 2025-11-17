@@ -78,9 +78,7 @@ public class ussdcontroller {
     
 
     @PostMapping(
-            value = "/ussd",
-            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE
+            value = "/ussd"
     )
     public String handleUssdRequest(@RequestParam(name = "text", required = false) String inputText, @RequestParam(name = "phoneNumber") String phoneNumber) {
         try {
