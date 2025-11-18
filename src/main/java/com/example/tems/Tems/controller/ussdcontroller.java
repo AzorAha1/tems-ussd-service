@@ -213,6 +213,18 @@ public class ussdcontroller {
 
 
 
+    // private String HandleLevel1(String phone, String[] parts, boolean isInitial) {
+    //     if (isInitial) {
+    //         // Check if user is in the middle of FHIS enrollment
+    //         String currentFlow = (String) retrieveFromSession(phone, "currentFlow");
+    //         if (currentFlow != null && (currentFlow.equals("fhis_enrollment") || currentFlow.equals("formal_fhis_enrollment"))) {
+    //             return "CON You have an ongoing enrollment.\n1. Continue\n2. Start Fresh\n0. Exit";
+    //         }
+    //     }
+
+    //     return "CON Welcome to TEMS SERVICE\n" +
+    //             "Enter the name or initials of the organization you want to search for:";
+    // }
     private String HandleLevel1(String phone, String[] parts, boolean isInitial) {
         if (isInitial) {
             // Check if user is in the middle of FHIS enrollment
@@ -222,38 +234,87 @@ public class ussdcontroller {
             }
         }
 
-        return "CON Welcome to TEMS SERVICE\n" +
-                "Enter the name or initials of the organization you want to search for:";
+        // NEW: Show welcome menu instead of asking for search
+        return "CON Welcome to TEMS SERVICE\n\n" +
+            "1. Search Organizations\n" +
+            "2. About TEMS\n" +
+            "0. Exit";
     }
 
+    // private String HandleLevel2(String text, String phone, String[] parts) {
+    //     // Clear any stale organization selection
+    //     saveToSession(phone, "selectedOrgId", null);
+    //     saveToSession(phone, "currentSubMenu", null);
+        
+    //     if (text == null || text.trim().isEmpty()) {
+    //         return "CON Enter the name or initials of the organization you want to search for:";
+    //     }
+    
+    //     Pageable firstPage = PageRequest.of(0, 5);
+    //     Page<Organization> results = handleOrganizationSearch(text.trim(), firstPage);
+    //     saveToSession(phone, "isMoreResultsFlow", false);
+    
+    //     if (results.isEmpty()) {
+    //         return "END No matches for: " + text.trim();
+    //     }
+    
+    //     // Save search data to session
+    //     saveToSession(phone, "searchTerm", text.trim());
+    //     saveToSession(phone, "currentPage", 0);
+    //     saveToSession(phone, "totalPages", (int) results.getTotalPages());
+    
+    //     List<Long> orgIds = results.getContent().stream()
+    //             .map(Organization::getId)
+    //             .collect(Collectors.toList());
+    //     saveToSession(phone, "org_ids", orgIds);
+    
+    //     return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
+    // }
     private String HandleLevel2(String text, String phone, String[] parts) {
-        // Clear any stale organization selection
+    // Clear any stale organization selection
         saveToSession(phone, "selectedOrgId", null);
         saveToSession(phone, "currentSubMenu", null);
         
-        if (text == null || text.trim().isEmpty()) {
-            return "CON Enter the name or initials of the organization you want to search for:";
+        // Handle menu choices from welcome screen
+        switch (text.trim()) {
+            case "1": // Search Organizations
+                return "CON Enter the name or initials of the organization you want to search for:";
+                
+            case "2": // About TEMS
+                return "END TEMS (Terracotta Easy Mobile Solutions)\n" +
+                    "A service to help you find organization information easily.\n\n" +
+                    "Dial *7447# to start.";
+                
+            case "0": // Exit
+                resetUserSession(phone);
+                return "END Thank you for using TEMS SERVICE!";
+                
+            default:
+                // If not a menu choice, treat as search query
+                if (text == null || text.trim().isEmpty()) {
+                    return "CON Enter the name or initials of the organization you want to search for:";
+                }
+            
+                Pageable firstPage = PageRequest.of(0, 5);
+                Page<Organization> results = handleOrganizationSearch(text.trim(), firstPage);
+                saveToSession(phone, "isMoreResultsFlow", false);
+            
+                if (results.isEmpty()) {
+                    return "END No matches for: " + text.trim();
+                }
+            
+                // Save search data to session
+                saveToSession(phone, "searchTerm", text.trim());
+                saveToSession(phone, "currentPage", 0);
+                saveToSession(phone, "totalPages", (int) results.getTotalPages());
+            
+                List<Long> orgIds = results.getContent().stream()
+                        .map(Organization::getId)
+                        .collect(Collectors.toList());
+                saveToSession(phone, "org_ids", orgIds);
+            
+                return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
         }
-    
-        Pageable firstPage = PageRequest.of(0, 5);
-        Page<Organization> results = handleOrganizationSearch(text.trim(), firstPage);
-        saveToSession(phone, "isMoreResultsFlow", false);
-    
-        if (results.isEmpty()) {
-            return "END No matches for: " + text.trim();
-        }
-    
-        // Save search data to session
-        saveToSession(phone, "searchTerm", text.trim());
-        saveToSession(phone, "currentPage", 0);
-        saveToSession(phone, "totalPages", (int) results.getTotalPages());
-    
-        List<Long> orgIds = results.getContent().stream()
-                .map(Organization::getId)
-                .collect(Collectors.toList());
-        saveToSession(phone, "org_ids", orgIds);
-    
-        return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
     }
     
     private String showOrganizationoptions(List<Organization> organizations, int currentPage, int totalPages) {
@@ -285,12 +346,57 @@ public class ussdcontroller {
                 "0. Back to search results";
     }
 
+    // private String HandleLevel3(String choice, String phone, String[] parts) {
+    //     // First check if we have a selected org (we're in org menu)
+    //     Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
+        
+    //     if (selectedOrgId != null) {
+    //         // We're in an organization's menu
+    //         Optional<Organization> orgOptional = organizationRepository.findById(selectedOrgId);
+    //         if (!orgOptional.isPresent()) {
+    //             clearNavigationSession(phone);
+    //             return "END Organization not found. Please try again.";
+    //         }
+    //         return handleOrganizationMenu(choice, orgOptional.get(), phone);
+    //     }
+        
+    //     // We're selecting from search results
+    //     return handleOrganizationSelection(choice, phone);
+    // }
     private String HandleLevel3(String choice, String phone, String[] parts) {
-        // First check if we have a selected org (we're in org menu)
+    // Check if we're coming from "1. Search Organizations"
+        if (parts[0].equals("1") && parts.length == 2) {
+            // This is the search query after selecting "1"
+            String searchTerm = choice.trim();
+            
+            if (searchTerm.isEmpty()) {
+                return "CON Enter the name or initials of the organization:";
+            }
+            
+            Pageable firstPage = PageRequest.of(0, 5);
+            Page<Organization> results = handleOrganizationSearch(searchTerm, firstPage);
+            
+            if (results.isEmpty()) {
+                return "END No matches for: " + searchTerm;
+            }
+            
+            // Save search data to session
+            saveToSession(phone, "searchTerm", searchTerm);
+            saveToSession(phone, "currentPage", 0);
+            saveToSession(phone, "totalPages", (int) results.getTotalPages());
+            
+            List<Long> orgIds = results.getContent().stream()
+                    .map(Organization::getId)
+                    .collect(Collectors.toList());
+            saveToSession(phone, "org_ids", orgIds);
+            
+            return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
+        }
+        
+        // Rest of your existing HandleLevel3 code...
         Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
         
         if (selectedOrgId != null) {
-            // We're in an organization's menu
             Optional<Organization> orgOptional = organizationRepository.findById(selectedOrgId);
             if (!orgOptional.isPresent()) {
                 clearNavigationSession(phone);
@@ -299,7 +405,6 @@ public class ussdcontroller {
             return handleOrganizationMenu(choice, orgOptional.get(), phone);
         }
         
-        // We're selecting from search results
         return handleOrganizationSelection(choice, phone);
     }
 
