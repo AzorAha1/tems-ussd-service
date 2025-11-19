@@ -105,6 +105,7 @@ public class ussdcontroller {
                     phone = body.get("phone").toString();
                 }
             }
+            
             String phonefinal = phoneNumber != null ? phoneNumber : (phone != null ? phone : "");
             String inputfinal = input != null ? input : (text != null ? text : "");
             if (phonefinal.isEmpty()) {
@@ -117,6 +118,24 @@ public class ussdcontroller {
             e.printStackTrace();
             return "END Service temporarily unavailable. Please try again.";
         }
+    }
+    private boolean isInitialShortcodeRequest(String input, String phoneNumber) {
+        if (input == null) return false;
+        
+        // Normalize input - remove * and # characters
+        String normalizedInput = input.replaceAll("[*#]", "").trim().toLowerCase();
+        
+        // Check for common initial request patterns
+        boolean isShortcode = normalizedInput.equals("7447") || 
+                            normalizedInput.equals("") || 
+                            normalizedInput.startsWith("7447");
+        
+        // Also check if this is literally the first request (no session keys exist)
+        boolean hasNoSession = Arrays.stream(SessionKeys.ALL_KEYS)
+            .noneMatch(key -> Boolean.TRUE.equals(redisTemplate.hasKey(phoneNumber + ":" + key)));
+        
+        System.out.println("Initial request check - input: '" + input + "', normalized: '" + normalizedInput + "', isShortcode: " + isShortcode + ", hasNoSession: " + hasNoSession);
+        return isShortcode || hasNoSession;
     }
     private String processUssdRequest(String inputText, String phoneNumber) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
@@ -133,6 +152,12 @@ public class ussdcontroller {
 
         // extend number on every request
         extendUserSession(normalizedPhoneNumber);
+
+        if(isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
+            System.out.println("✅ Detected initial USSD request for: " + normalizedPhoneNumber);
+            clearNavigationSession(normalizedPhoneNumber);
+            return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+        }
 
         String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.currentTimeMillis()/1000;
         if (isDuplicateRequest(requestId, inputedText)) {
