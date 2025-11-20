@@ -4,6 +4,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.HashMap;
+import java.util.Map;
 import com.example.tems.Tems.Session.RedisConfig;
 import com.example.tems.Tems.model.FhisEnrollment;
 import com.example.tems.Tems.model.Hospital;
@@ -17,6 +19,7 @@ import com.example.tems.Tems.service.SubscriptionService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -80,20 +83,26 @@ public class ussdcontroller {
     
 
     @PostMapping(
-            value = "/ussd",
-            consumes = { MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE }
+        value = "/ussd",
+        consumes = { MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE },
+        produces = MediaType.APPLICATION_JSON_VALUE  // IMPORTANT: Return JSON
     )
-    public String handleUssdRequest(
+    public Map<String, Object> handleUssdRequest(
         @RequestParam(name = "text", required = false) String text,
         @RequestParam(name = "input", required = false) String input,
         @RequestParam(name = "phoneNumber", required = false) String phoneNumber,
         @RequestParam(name = "phone", required = false) String phone,
+        @RequestParam(name = "session_id", required = false) String sessionId,
         @RequestBody(required = false) Map<String, Object> body
-        ) {
+    ) {
         try {
+            // Extract parameters from body if not in query params
             if (body != null) {
                 if (phoneNumber == null && body.containsKey("phoneNumber")) {
                     phoneNumber = body.get("phoneNumber").toString();
+                }
+                if (phone == null && body.containsKey("phone")) {
+                    phone = body.get("phone").toString();
                 }
                 if (input == null && body.containsKey("input")) {
                     input = body.get("input").toString();
@@ -101,23 +110,50 @@ public class ussdcontroller {
                 if (text == null && body.containsKey("text")) {
                     text = body.get("text").toString();
                 }
-                if (phone == null && body.containsKey("phone")) {
-                    phone = body.get("phone").toString();
-                }
             }
             
-            String phonefinal = phoneNumber != null ? phoneNumber : (phone != null ? phone : "");
-            String inputfinal = input != null ? input : (text != null ? text : "");
-            if (phonefinal.isEmpty()) {
+            String phoneFinal = phoneNumber != null ? phoneNumber : (phone != null ? phone : "");
+            String inputFinal = input != null ? input : (text != null ? text : "");
+            
+            if (phoneFinal.isEmpty()) {
                 System.err.println("❌ Missing phone number in USSD request");
-                return "END Invalid request: missing phone number.";
+                return createUssdResponse(false, "Invalid request: missing phone number.");
             }
-            return processUssdRequest(inputfinal, phonefinal);
+            
+            // Process and get string response
+            String response = processUssdRequest(inputFinal, phoneFinal);
+            
+            // Convert to JSON format
+            return convertToJsonResponse(response);
+            
         } catch (Exception e) {
             System.err.println("Fatal error in USSD request: " + e.getMessage());
             e.printStackTrace();
-            return "END Service temporarily unavailable. Please try again.";
+            return createUssdResponse(false, "Service temporarily unavailable. Please try again.");
         }
+    }
+    private Map<String, Object> convertToJsonResponse(String response) {
+        Map<String, Object> jsonResponse = new HashMap<>();
+        
+        if (response.startsWith("CON ")) {
+            jsonResponse.put("continue", true);
+            jsonResponse.put("message", response.substring(4)); // Remove "CON "
+        } else if (response.startsWith("END ")) {
+            jsonResponse.put("continue", false);
+            jsonResponse.put("message", response.substring(4)); // Remove "END "
+        } else {
+            // Fallback
+            jsonResponse.put("continue", false);
+            jsonResponse.put("message", response);
+        }
+        
+        return jsonResponse;
+    }
+    private Map<String, Object> createUssdResponse(boolean shouldContinue, String message) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("continue", shouldContinue);
+        response.put("message", message);
+        return response;
     }
     private boolean isInitialShortcodeRequest(String input, String phoneNumber) {
         if (input == null) return false;
@@ -125,17 +161,31 @@ public class ussdcontroller {
         // Normalize input - remove * and # characters
         String normalizedInput = input.replaceAll("[*#]", "").trim().toLowerCase();
         
-        // Check for common initial request patterns
-        boolean isShortcode = normalizedInput.equals("7447") || 
-                            normalizedInput.equals("") || 
-                            normalizedInput.startsWith("7447");
+        System.out.println("🔍 Checking if initial request - input: '" + input + "', normalized: '" + normalizedInput + "'");
         
-        // Also check if this is literally the first request (no session keys exist)
+        // CRITICAL: Check if input is EXACTLY the shortcode "7447"
+        if (normalizedInput.equals("7447")) {
+            System.out.println("✅ Matched shortcode '7447' - this is initial request");
+            return true;
+        }
+        
+        // Also check for empty input
+        if (normalizedInput.isEmpty()) {
+            System.out.println("✅ Empty input - this is initial request");
+            return true;
+        }
+        
+        // Check if no session exists
         boolean hasNoSession = Arrays.stream(SessionKeys.ALL_KEYS)
             .noneMatch(key -> Boolean.TRUE.equals(redisTemplate.hasKey(phoneNumber + ":" + key)));
         
-        System.out.println("Initial request check - input: '" + input + "', normalized: '" + normalizedInput + "', isShortcode: " + isShortcode + ", hasNoSession: " + hasNoSession);
-        return isShortcode || hasNoSession;
+        if (hasNoSession) {
+            System.out.println("✅ No session found - treating as initial request");
+            return true;
+        }
+        
+        System.out.println("❌ Not an initial request - normalized: '" + normalizedInput + "'");
+        return false;
     }
     private String processUssdRequest(String inputText, String phoneNumber) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
@@ -143,69 +193,49 @@ public class ussdcontroller {
             return "END Invalid phone number provided.";
         }
         
-        
         String inputedText = (inputText == null) ? "" : inputText.trim();
-        // Only remove # at the very end of input, not everywhere
+        
+        // Only remove # at the very end of input
         if (inputedText.endsWith("#")) {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
         }
+        
+        System.out.println("📞 Processing USSD - Phone: " + normalizedPhoneNumber + ", Input: '" + inputedText + "'");
 
-        // extend number on every request
+        // Extend session on every request
         extendUserSession(normalizedPhoneNumber);
 
-        if(isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
-            System.out.println("✅ Detected initial USSD request for: " + normalizedPhoneNumber);
+        // CRITICAL: Check if this is initial shortcode request (e.g., "7447")
+        if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
+            System.out.println("✅ Initial USSD request detected - showing welcome menu");
             clearNavigationSession(normalizedPhoneNumber);
             return HandleLevel1(normalizedPhoneNumber, new String[0], true);
         }
 
+        // Check for duplicate requests
         String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.currentTimeMillis()/1000;
         if (isDuplicateRequest(requestId, inputedText)) {
             return "CON Processing your request...";
         }
 
-        // check for duplicate requests
-        // if (!inputText.isEmpty() && isDuplicateRequest(normalizedPhoneNumber, inputText)) {
-        //     System.out.println("Duplicate request detected for: " + normalizedPhoneNumber);
-        //     return "CON Processing your request..."; 
-        // }
-
-        // acquire processing lock for this user 
-        // if (!acquireUserLock(normalizedPhoneNumber)) {
-        //     System.out.println("Another request is being processed for: " + normalizedPhoneNumber);
-        //     return "CON Please wait, processing your previous request...";
-        // }
-
-
-            // Check for FHIS enrollment flow FIRST, before parsing steps
+        // Check for FHIS enrollment flow
         String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
         System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
 
-        // If user sends empty input and they're stuck in FHIS flow, reset
-        if (currentFlow != null && currentFlow.equals("fhis_enrollment") && inputedText.isEmpty()) {
-            resetUserSession(normalizedPhoneNumber);
-            return HandleLevel1(normalizedPhoneNumber, new String[0], true);
-        }    
-
-        // Handle FHIS enrollment flow - this takes precedence over step-based flow
         if ("fhis_enrollment".equals(currentFlow)) {
-            return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputText);
+            return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputedText);
         }
+        
+        // Parse input into steps
         String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
         int step = parts.length;
-        System.out.println("Main USSD Flow - Step: " + step + ", Input: " + inputedText);
+        
+        System.out.println("Main USSD Flow - Step: " + step + ", Parts: " + Arrays.toString(parts));
 
-        System.out.println("=== MAIN USSD DEBUG ===");
-        System.out.println("Current Flow: " + currentFlow);
-        System.out.println("Input Text: '" + inputedText + "'");
-        System.out.println("Step: " + step);
-        System.out.println("Parts: " + Arrays.toString(parts));
-        System.out.println("========================");
         // Main USSD flow
         switch (step) {
             case 0:
                 clearNavigationSession(normalizedPhoneNumber);
-                // Check database for enrollment progress
                 Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(normalizedPhoneNumber);
                 if (existing.isPresent() && !"completed".equals(existing.get().getCurrentStep()) && 
                     existing.get().getCurrentStep() != null && !"sector_selection".equals(existing.get().getCurrentStep())) {
@@ -219,14 +249,19 @@ public class ussdcontroller {
                         "0. Exit";
                 }
                 return HandleLevel1(normalizedPhoneNumber, parts, true);
+                
             case 1:
                 return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
+                
             case 2:
                 return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
+                
             case 3:
                 return handleLevel4(parts[2], normalizedPhoneNumber, parts);
+                
             case 4:
                 return handlelevel5(parts[3], normalizedPhoneNumber, parts);
+                
             default:
                 resetUserSession(normalizedPhoneNumber);
                 return "END Session expired. Please start over.";
@@ -259,7 +294,7 @@ public class ussdcontroller {
             }
         }
 
-        // NEW: Show welcome menu instead of asking for search
+        // Welcome menu - this will be shown when input is "7447"
         return "CON Welcome to TEMS SERVICE\n\n" +
             "1. Search Organizations\n" +
             "2. About TEMS\n" +
@@ -292,13 +327,14 @@ public class ussdcontroller {
     //             .map(Organization::getId)
     //             .collect(Collectors.toList());
     //     saveToSession(phone, "org_ids", orgIds);
-    
+
     //     return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
     // }
     private String HandleLevel2(String text, String phone, String[] parts) {
-    // Clear any stale organization selection
         saveToSession(phone, "selectedOrgId", null);
         saveToSession(phone, "currentSubMenu", null);
+        
+        System.out.println("📋 HandleLevel2 - Choice: '" + text + "'");
         
         // Handle menu choices from welcome screen
         switch (text.trim()) {
@@ -315,30 +351,10 @@ public class ussdcontroller {
                 return "END Thank you for using TEMS SERVICE!";
                 
             default:
-                // If not a menu choice, treat as search query
-                if (text == null || text.trim().isEmpty()) {
-                    return "CON Enter the name or initials of the organization you want to search for:";
-                }
-            
-                Pageable firstPage = PageRequest.of(0, 5);
-                Page<Organization> results = handleOrganizationSearch(text.trim(), firstPage);
-                saveToSession(phone, "isMoreResultsFlow", false);
-            
-                if (results.isEmpty()) {
-                    return "END No matches for: " + text.trim();
-                }
-            
-                // Save search data to session
-                saveToSession(phone, "searchTerm", text.trim());
-                saveToSession(phone, "currentPage", 0);
-                saveToSession(phone, "totalPages", (int) results.getTotalPages());
-            
-                List<Long> orgIds = results.getContent().stream()
-                        .map(Organization::getId)
-                        .collect(Collectors.toList());
-                saveToSession(phone, "org_ids", orgIds);
-            
-                return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
+                return "CON Invalid choice. Please select:\n\n" +
+                    "1. Search Organizations\n" +
+                    "2. About TEMS\n" +
+                    "0. Exit";
         }
     }
     
