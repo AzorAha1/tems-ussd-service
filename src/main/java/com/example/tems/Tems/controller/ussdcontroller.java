@@ -82,10 +82,60 @@ public class ussdcontroller {
     }
     
 
+    // @PostMapping(
+    //     value = "/ussd",
+    //     consumes = { MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE },
+    //     produces = MediaType.APPLICATION_JSON_VALUE  // IMPORTANT: Return JSON
+    // )
+    // public Map<String, Object> handleUssdRequest(
+    //     @RequestParam(name = "text", required = false) String text,
+    //     @RequestParam(name = "input", required = false) String input,
+    //     @RequestParam(name = "phoneNumber", required = false) String phoneNumber,
+    //     @RequestParam(name = "phone", required = false) String phone,
+    //     @RequestParam(name = "session_id", required = false) String sessionId,
+    //     @RequestBody(required = false) Map<String, Object> body
+    // ) {
+    //     try {
+    //         // Extract parameters from body if not in query params
+    //         if (body != null) {
+    //             if (phoneNumber == null && body.containsKey("phoneNumber")) {
+    //                 phoneNumber = body.get("phoneNumber").toString();
+    //             }
+    //             if (phone == null && body.containsKey("phone")) {
+    //                 phone = body.get("phone").toString();
+    //             }
+    //             if (input == null && body.containsKey("input")) {
+    //                 input = body.get("input").toString();
+    //             }
+    //             if (text == null && body.containsKey("text")) {
+    //                 text = body.get("text").toString();
+    //             }
+    //         }
+            
+    //         String phoneFinal = phoneNumber != null ? phoneNumber : (phone != null ? phone : "");
+    //         String inputFinal = input != null ? input : (text != null ? text : "");
+            
+    //         if (phoneFinal.isEmpty()) {
+    //             System.err.println("❌ Missing phone number in USSD request");
+    //             return createUssdResponse(false, "Invalid request: missing phone number.");
+    //         }
+            
+    //         // Process and get string response
+    //         String response = processUssdRequest(inputFinal, phoneFinal);
+            
+    //         // Convert to JSON format
+    //         return convertToJsonResponse(response);
+            
+    //     } catch (Exception e) {
+    //         System.err.println("Fatal error in USSD request: " + e.getMessage());
+    //         e.printStackTrace();
+    //         return createUssdResponse(false, "Service temporarily unavailable. Please try again.");
+    //     }
+    // }
     @PostMapping(
         value = "/ussd",
         consumes = { MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE },
-        produces = MediaType.APPLICATION_JSON_VALUE  // IMPORTANT: Return JSON
+        produces = MediaType.APPLICATION_JSON_VALUE
     )
     public Map<String, Object> handleUssdRequest(
         @RequestParam(name = "text", required = false) String text,
@@ -95,9 +145,13 @@ public class ussdcontroller {
         @RequestParam(name = "session_id", required = false) String sessionId,
         @RequestBody(required = false) Map<String, Object> body
     ) {
+        System.out.println("=== USSD REQUEST START ===");
+        System.out.println("Params - text: '" + text + "', input: '" + input + "', phone: '" + phone + "', phoneNumber: '" + phoneNumber + "'");
+        
         try {
             // Extract parameters from body if not in query params
             if (body != null) {
+                System.out.println("Body: " + body);
                 if (phoneNumber == null && body.containsKey("phoneNumber")) {
                     phoneNumber = body.get("phoneNumber").toString();
                 }
@@ -115,22 +169,55 @@ public class ussdcontroller {
             String phoneFinal = phoneNumber != null ? phoneNumber : (phone != null ? phone : "");
             String inputFinal = input != null ? input : (text != null ? text : "");
             
+            System.out.println("Final - phone: '" + phoneFinal + "', input: '" + inputFinal + "'");
+            
             if (phoneFinal.isEmpty()) {
-                System.err.println("❌ Missing phone number in USSD request");
+                System.err.println("❌ Missing phone number");
                 return createUssdResponse(false, "Invalid request: missing phone number.");
             }
             
             // Process and get string response
             String response = processUssdRequest(inputFinal, phoneFinal);
+            System.out.println("Response: " + response);
             
             // Convert to JSON format
-            return convertToJsonResponse(response);
+            Map<String, Object> jsonResponse = convertToJsonResponse(response);
+            System.out.println("=== USSD REQUEST END ===");
+            return jsonResponse;
             
         } catch (Exception e) {
-            System.err.println("Fatal error in USSD request: " + e.getMessage());
+            System.err.println("❌❌❌ FATAL ERROR in USSD request ❌❌❌");
+            System.err.println("Error type: " + e.getClass().getName());
+            System.err.println("Error message: " + e.getMessage());
+            System.err.println("Stack trace:");
             e.printStackTrace();
+            System.out.println("=== USSD REQUEST END (WITH ERROR) ===");
+            
             return createUssdResponse(false, "Service temporarily unavailable. Please try again.");
         }
+    }
+    @PostMapping("/test-redis")
+    public Map<String, Object> testRedis(@RequestParam String phone) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            // Test write
+            redisTemplate.opsForValue().set(phone + ":test", "working", 1, TimeUnit.MINUTES);
+            
+            // Test read
+            Object value = redisTemplate.opsForValue().get(phone + ":test");
+            
+            // Test delete
+            redisTemplate.delete(phone + ":test");
+            
+            result.put("status", "success");
+            result.put("redis_working", true);
+            result.put("value", value);
+        } catch (Exception e) {
+            result.put("status", "error");
+            result.put("redis_working", false);
+            result.put("error", e.getMessage());
+        }
+        return result;
     }
     private Map<String, Object> convertToJsonResponse(String response) {
         Map<String, Object> jsonResponse = new HashMap<>();
@@ -187,6 +274,86 @@ public class ussdcontroller {
         System.out.println("❌ Not an initial request - normalized: '" + normalizedInput + "'");
         return false;
     }
+    // private String processUssdRequest(String inputText, String phoneNumber) {
+    //     String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+    //     if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
+    //         return "END Invalid phone number provided.";
+    //     }
+        
+    //     String inputedText = (inputText == null) ? "" : inputText.trim();
+        
+    //     // Only remove # at the very end of input
+    //     if (inputedText.endsWith("#")) {
+    //         inputedText = inputedText.substring(0, inputedText.length() - 1);
+    //     }
+        
+    //     System.out.println("📞 Processing USSD - Phone: " + normalizedPhoneNumber + ", Input: '" + inputedText + "'");
+
+    //     // Extend session on every request
+    //     extendUserSession(normalizedPhoneNumber);
+
+    //     // CRITICAL: Check if this is initial shortcode request (e.g., "7447")
+    //     if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
+    //         System.out.println("✅ Initial USSD request detected - showing welcome menu");
+    //         clearNavigationSession(normalizedPhoneNumber);
+    //         return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+    //     }
+
+    //     // Check for duplicate requests
+    //     String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.currentTimeMillis()/1000;
+    //     if (isDuplicateRequest(requestId, inputedText)) {
+    //         return "CON Processing your request...";
+    //     }
+
+    //     // Check for FHIS enrollment flow
+    //     String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
+    //     System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
+
+    //     if ("fhis_enrollment".equals(currentFlow)) {
+    //         return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputedText);
+    //     }
+        
+    //     // Parse input into steps
+    //     String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
+    //     int step = parts.length;
+        
+    //     System.out.println("Main USSD Flow - Step: " + step + ", Parts: " + Arrays.toString(parts));
+
+    //     // Main USSD flow
+    //     switch (step) {
+    //         case 0:
+    //             clearNavigationSession(normalizedPhoneNumber);
+    //             Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(normalizedPhoneNumber);
+    //             if (existing.isPresent() && !"completed".equals(existing.get().getCurrentStep()) && 
+    //                 existing.get().getCurrentStep() != null && !"sector_selection".equals(existing.get().getCurrentStep())) {
+                    
+    //                 FhisEnrollment enrollment = existing.get();
+    //                 return "CON Welcome back!\n" +
+    //                     "You have a " + enrollment.getEnrollmentType() + " enrollment in progress.\n" +
+    //                     "Progress: " + getProgressPercentage(enrollment.getCurrentStep()) + "%\n\n" +
+    //                     "1. Continue Enrollment\n" +
+    //                     "2. Start Fresh Search\n" +
+    //                     "0. Exit";
+    //             }
+    //             return HandleLevel1(normalizedPhoneNumber, parts, true);
+                
+    //         case 1:
+    //             return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
+                
+    //         case 2:
+    //             return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
+                
+    //         case 3:
+    //             return handleLevel4(parts[2], normalizedPhoneNumber, parts);
+                
+    //         case 4:
+    //             return handlelevel5(parts[3], normalizedPhoneNumber, parts);
+                
+    //         default:
+    //             resetUserSession(normalizedPhoneNumber);
+    //             return "END Session expired. Please start over.";
+    //     }
+    // }
     private String processUssdRequest(String inputText, String phoneNumber) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
         if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
@@ -232,39 +399,51 @@ public class ussdcontroller {
         
         System.out.println("Main USSD Flow - Step: " + step + ", Parts: " + Arrays.toString(parts));
 
-        // Main USSD flow
-        switch (step) {
-            case 0:
-                clearNavigationSession(normalizedPhoneNumber);
-                Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(normalizedPhoneNumber);
-                if (existing.isPresent() && !"completed".equals(existing.get().getCurrentStep()) && 
-                    existing.get().getCurrentStep() != null && !"sector_selection".equals(existing.get().getCurrentStep())) {
+        // CRITICAL FIX: Better error handling for each step
+        try {
+            switch (step) {
+                case 0:
+                    clearNavigationSession(normalizedPhoneNumber);
+                    Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(normalizedPhoneNumber);
+                    if (existing.isPresent() && !"completed".equals(existing.get().getCurrentStep()) && 
+                        existing.get().getCurrentStep() != null && !"sector_selection".equals(existing.get().getCurrentStep())) {
+                        
+                        FhisEnrollment enrollment = existing.get();
+                        return "CON Welcome back!\n" +
+                            "You have a " + enrollment.getEnrollmentType() + " enrollment in progress.\n" +
+                            "Progress: " + getProgressPercentage(enrollment.getCurrentStep()) + "%\n\n" +
+                            "1. Continue Enrollment\n" +
+                            "2. Start Fresh Search\n" +
+                            "0. Exit";
+                    }
+                    return HandleLevel1(normalizedPhoneNumber, parts, true);
                     
-                    FhisEnrollment enrollment = existing.get();
-                    return "CON Welcome back!\n" +
-                        "You have a " + enrollment.getEnrollmentType() + " enrollment in progress.\n" +
-                        "Progress: " + getProgressPercentage(enrollment.getCurrentStep()) + "%\n\n" +
-                        "1. Continue Enrollment\n" +
-                        "2. Start Fresh Search\n" +
-                        "0. Exit";
-                }
-                return HandleLevel1(normalizedPhoneNumber, parts, true);
-                
-            case 1:
-                return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
-                
-            case 2:
-                return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
-                
-            case 3:
-                return handleLevel4(parts[2], normalizedPhoneNumber, parts);
-                
-            case 4:
-                return handlelevel5(parts[3], normalizedPhoneNumber, parts);
-                
-            default:
-                resetUserSession(normalizedPhoneNumber);
-                return "END Session expired. Please start over.";
+                case 1:
+                    System.out.println("Calling HandleLevel2 with choice: '" + parts[0] + "'");
+                    return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
+                    
+                case 2:
+                    System.out.println("Calling HandleLevel3 with choice: '" + parts[1] + "'");
+                    return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
+                    
+                case 3:
+                    System.out.println("Calling handleLevel4 with choice: '" + parts[2] + "'");
+                    return handleLevel4(parts[2], normalizedPhoneNumber, parts);
+                    
+                case 4:
+                    System.out.println("Calling handlelevel5 with choice: '" + parts[3] + "'");
+                    return handlelevel5(parts[3], normalizedPhoneNumber, parts);
+                    
+                default:
+                    resetUserSession(normalizedPhoneNumber);
+                    return "END Session expired. Please start over.";
+            }
+        } catch (Exception e) {
+            System.err.println("❌ Error processing step " + step + ": " + e.getMessage());
+            e.printStackTrace();
+            
+            // Return user-friendly error instead of generic message
+            return "END An error occurred. Please dial *7447# to start over.";
         }
     }
     private static final int MAX_ORGANIZATIONS_PER_PAGE = 5;
@@ -331,33 +510,76 @@ public class ussdcontroller {
     //     return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
     // }
     private String HandleLevel2(String text, String phone, String[] parts) {
-        saveToSession(phone, "selectedOrgId", null);
-        saveToSession(phone, "currentSubMenu", null);
+        System.out.println("📋 HandleLevel2 called - text: '" + text + "', phone: '" + phone + "'");
         
-        System.out.println("📋 HandleLevel2 - Choice: '" + text + "'");
-        
-        // Handle menu choices from welcome screen
-        switch (text.trim()) {
-            case "1": // Search Organizations
-                return "CON Enter the name or initials of the organization you want to search for:";
-                
-            case "2": // About TEMS
-                return "END TEMS (Terracotta Easy Mobile Solutions)\n" +
-                    "A service to help you find organization information easily.\n\n" +
-                    "Dial *7447# to start.";
-                
-            case "0": // Exit
-                resetUserSession(phone);
-                return "END Thank you for using TEMS SERVICE!";
-                
-            default:
-                return "CON Invalid choice. Please select:\n\n" +
+        try {
+            // Clear stale data
+            try {
+                saveToSession(phone, "selectedOrgId", null);
+                saveToSession(phone, "currentSubMenu", null);
+            } catch (Exception e) {
+                System.err.println("⚠️ Warning: Could not clear session data: " + e.getMessage());
+                // Continue anyway
+            }
+            
+            // Validate input
+            if (text == null || text.trim().isEmpty()) {
+                System.err.println("❌ Empty text in HandleLevel2");
+                return "CON Invalid input. Please select:\n\n" +
                     "1. Search Organizations\n" +
                     "2. About TEMS\n" +
                     "0. Exit";
+            }
+            
+            String choice = text.trim();
+            System.out.println("Processing choice: '" + choice + "'");
+            
+            // Handle menu choices
+            switch (choice) {
+                case "1":
+                    System.out.println("✅ User selected: Search Organizations");
+                    return "CON Enter the name or initials of the organization you want to search for:";
+                    
+                case "2":
+                    System.out.println("✅ User selected: About TEMS");
+                    // DON'T call resetUserSession here - just return the message
+                    return "END TEMS (Terracotta Easy Mobile Solutions)\n" +
+                        "A service to help you find organization information easily.\n\n" +
+                        "Dial *7447# to start.";
+                    
+                case "0":
+                    System.out.println("✅ User selected: Exit");
+                    // Try to reset session but don't fail if it errors
+                    try {
+                        resetUserSession(phone);
+                    } catch (Exception e) {
+                        System.err.println("⚠️ Session reset failed but continuing: " + e.getMessage());
+                    }
+                    return "END Thank you for using TEMS SERVICE!";
+                    
+                default:
+                    System.out.println("❌ Invalid choice: '" + choice + "'");
+                    return "CON Invalid choice. Please select:\n\n" +
+                        "1. Search Organizations\n" +
+                        "2. About TEMS\n" +
+                        "0. Exit";
+            }
+            
+        } catch (Exception e) {
+            System.err.println("❌ CRITICAL ERROR in HandleLevel2: " + e.getMessage());
+            e.printStackTrace();
+            return "END Error processing request. Please dial *7447# to try again.";
         }
     }
-    
+    private String safeHandle(String methodName, java.util.function.Supplier<String> handler) {
+        try {
+            return handler.get();
+        } catch (Exception e) {
+            System.err.println("❌ Error in " + methodName + ": " + e.getMessage());
+            e.printStackTrace();
+            return "END An error occurred. Please dial *7447# to start over.";
+        }
+    }
     private String showOrganizationoptions(List<Organization> organizations, int currentPage, int totalPages) {
         // FIXED: Added null check
         if (organizations == null || organizations.isEmpty()) {
@@ -783,16 +1005,32 @@ public class ussdcontroller {
     }
 
     private void saveToSession(String phoneNumber, String key, Object value) {
+        if (phoneNumber == null || phoneNumber.isEmpty()) {
+            System.err.println("⚠️ Cannot save to session - phone number is null/empty");
+            return;
+        }
+        
+        if (key == null || key.isEmpty()) {
+            System.err.println("⚠️ Cannot save to session - key is null/empty");
+            return;
+        }
+        
         try {
             String sessionkey = phoneNumber + ":" + key;
-            // OPTIMIZATION: Use shorter expiration for frequently accessed data
             int timeoutMinutes = key.equals("currentField") ? 15 : 10;
-            redisTemplate.opsForValue().set(sessionkey, value, timeoutMinutes, TimeUnit.MINUTES);
-            // Removed excessive logging to improve performance
+            
+            if (value == null) {
+                // Delete the key if value is null
+                redisTemplate.delete(sessionkey);
+            } else {
+                redisTemplate.opsForValue().set(sessionkey, value, timeoutMinutes, TimeUnit.MINUTES);
+            }
         } catch (Exception e) {
-            System.err.println("Error saving to session: " + e.getMessage());
+            System.err.println("⚠️ Error saving to session (key: " + key + "): " + e.getMessage());
+            // Don't throw - just log and continue
         }
     }
+
 
     private List<Long> getOrgIdsFromSession(String phone) {
         List<?> rawList = (List<?>) retrieveFromSession(phone, "org_ids");
@@ -908,28 +1146,66 @@ public class ussdcontroller {
 
 
     // Add a method to completely reset user session when they want to start fresh
+    // private void resetUserSession(String phoneNumber) {
+    //     System.out.println("Complete session reset for: " + phoneNumber);
+    //     try {
+    //         // Clear ALL keys including any stragglers
+    //         Set<String> allKeys = redisTemplate.keys(phoneNumber + ":*");
+    //         if (allKeys != null && !allKeys.isEmpty()) {
+    //             redisTemplate.delete(allKeys);
+    //             System.out.println("Deleted " + allKeys.size() + " keys for " + phoneNumber);
+    //         }
+    //     } catch (Exception e) {
+    //         System.err.println("Error in full reset: " + e.getMessage());
+    //         // Fallback to individual deletion
+    //         for (String key : SessionKeys.ALL_KEYS) {
+    //             try {
+    //                 redisTemplate.delete(phoneNumber + ":" + key);
+    //             } catch (Exception ex) {
+    //                 // silently ignore individual key deletion errors
+    //                 System.err.println("Error deleting key " + key + ": " + ex.getMessage());
+    //             }
+    //         }
+    //     }
+    // }
     private void resetUserSession(String phoneNumber) {
-        System.out.println("Complete session reset for: " + phoneNumber);
+        System.out.println("🔄 Session reset requested for: " + phoneNumber);
+        
+        if (phoneNumber == null || phoneNumber.isEmpty()) {
+            System.err.println("⚠️ Cannot reset session - phone number is null/empty");
+            return;
+        }
+        
         try {
-            // Clear ALL keys including any stragglers
+            // Try to get keys matching pattern
             Set<String> allKeys = redisTemplate.keys(phoneNumber + ":*");
+            
             if (allKeys != null && !allKeys.isEmpty()) {
                 redisTemplate.delete(allKeys);
-                System.out.println("Deleted " + allKeys.size() + " keys for " + phoneNumber);
+                System.out.println("✅ Deleted " + allKeys.size() + " keys for " + phoneNumber);
+            } else {
+                System.out.println("ℹ️ No keys found to delete for " + phoneNumber);
             }
         } catch (Exception e) {
-            System.err.println("Error in full reset: " + e.getMessage());
-            // Fallback to individual deletion
+            System.err.println("⚠️ Error in bulk reset: " + e.getMessage());
+            
+            // Fallback: try individual deletion
+            int deleted = 0;
             for (String key : SessionKeys.ALL_KEYS) {
                 try {
-                    redisTemplate.delete(phoneNumber + ":" + key);
+                    String fullKey = phoneNumber + ":" + key;
+                    if (Boolean.TRUE.equals(redisTemplate.hasKey(fullKey))) {
+                        redisTemplate.delete(fullKey);
+                        deleted++;
+                    }
                 } catch (Exception ex) {
-                    // silently ignore individual key deletion errors
-                    System.err.println("Error deleting key " + key + ": " + ex.getMessage());
+                    // Silently continue
                 }
             }
+            System.out.println("✅ Fallback: Deleted " + deleted + " keys individually");
         }
     }
+
 
     private String handleFHISEnrollmentFlow(String phoneNumber, String inputText) {
         System.out.println("FHIS Enrollment Flow - Phone: " + phoneNumber + ", Input: " + inputText);
