@@ -1,51 +1,56 @@
-package com.example.tems.Tems.Session;
-
-import java.time.Duration;
-
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
-import org.springframework.session.data.redis.config.annotation.web.http.EnableRedisHttpSession;
+import io.lettuce.core.ClientOptions;
+import io.lettuce.core.SocketOptions;
+import java.time.Duration;
 
 @Configuration
-@EnableRedisHttpSession
 public class RedisConfig {
-    
+
     @Bean
-    public LettuceConnectionFactory connectionFactory() {
+    public LettuceConnectionFactory redisConnectionFactory() {
+        String host = System.getenv().getOrDefault("REDISHOST", "localhost");
+        String port = System.getenv().getOrDefault("REDISPORT", "6379");
+        String password = System.getenv().getOrDefault("REDISPASSWORD", "");
+
+        System.out.println("🔧 Redis Config - Host: " + host + ", Port: " + port + ", Has Password: " + !password.isEmpty());
+
+        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, Integer.parseInt(port));
+        if (!password.isEmpty()) {
+            config.setPassword(password);
+        }
+
+        // CRITICAL: Make connection fail gracefully
+        SocketOptions socketOptions = SocketOptions.builder()
+                .connectTimeout(Duration.ofSeconds(2))
+                .build();
+
+        ClientOptions clientOptions = ClientOptions.builder()
+                .socketOptions(socketOptions)
+                .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                .build();
+
         LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
-            .commandTimeout(Duration.ofSeconds(2))  // Reduce timeout
-            .shutdownTimeout(Duration.ZERO)
-            .build();
-            
-        RedisStandaloneConfiguration serverConfig = new RedisStandaloneConfiguration();
-        serverConfig.setHostName("localhost");
-        serverConfig.setPort(6379);
-        // Add password if needed: serverConfig.setPassword("yourpassword");
+                .clientOptions(clientOptions)
+                .commandTimeout(Duration.ofSeconds(2))
+                .build();
+
+        LettuceConnectionFactory factory = new LettuceConnectionFactory(config, clientConfig);
+        factory.setValidateConnection(false); // Don't validate on startup
+        factory.setShareNativeConnection(false); // Don't share connections
         
-        return new LettuceConnectionFactory(serverConfig, clientConfig);
+        return factory;
     }
-    
+
     @Bean
-    public RedisTemplate<String, Object> redisTemplate(LettuceConnectionFactory connectionFactory) {
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
-        
-        // Use faster serializers
-        StringRedisSerializer stringSerializer = new StringRedisSerializer();
-        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer();
-        
-        template.setKeySerializer(stringSerializer);
-        template.setHashKeySerializer(stringSerializer);
-        template.setValueSerializer(jsonSerializer);
-        template.setHashValueSerializer(jsonSerializer);
-        
-        template.afterPropertiesSet();
         return template;
     }
 }
