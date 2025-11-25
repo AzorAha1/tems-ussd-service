@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
@@ -20,7 +21,6 @@ public class RedisConfig {
     @Bean
     public RedisConnectionFactory connectionFactory() {
         try {
-            // Parse redis://:password@host:port format
             String url = redisUrl.trim();
             if (url.startsWith("redis://")) {
                 url = url.substring(8);
@@ -35,13 +35,18 @@ public class RedisConfig {
                 String authPart = parts[0];
                 String hostPart = parts[1];
                 
-                if (authPart.contains(":")) {
-                    password = authPart.split(":")[1];
+                // Extract password (format is :password)
+                if (authPart.startsWith(":")) {
+                    password = authPart.substring(1);
+                } else if (authPart.contains(":")) {
+                    password = authPart.split(":", 2)[1];
                 }
                 
+                // Extract host and port
                 if (hostPart.contains(":")) {
-                    host = hostPart.split(":")[0];
-                    port = Integer.parseInt(hostPart.split(":")[1]);
+                    String[] hostPortParts = hostPart.split(":");
+                    host = hostPortParts[0];
+                    port = Integer.parseInt(hostPortParts[1]);
                 } else {
                     host = hostPart;
                 }
@@ -52,11 +57,20 @@ public class RedisConfig {
                 host = url;
             }
             
-            return new LettuceConnectionFactory(host, port);
+            // ✅ THIS IS THE KEY FIX - Use RedisStandaloneConfiguration to set password
+            RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
+            if (!password.isEmpty()) {
+                config.setPassword(password);
+                System.out.println("✅ Redis password configured");
+            }
+            
+            System.out.println("✅ Connecting to Redis at " + host + ":" + port);
+            return new LettuceConnectionFactory(config);
+            
         } catch (Exception e) {
-            System.err.println("Error parsing REDIS_URL: " + e.getMessage());
-            System.err.println("Using fallback localhost connection");
-            return new LettuceConnectionFactory("localhost", 6379);
+            System.err.println("❌ Error parsing REDIS_URL: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to configure Redis", e);
         }
     }
     
@@ -64,11 +78,6 @@ public class RedisConfig {
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
-        
-        if (redisUrl.contains("@")) {
-            String password = redisUrl.split("@")[0].split(":")[2];
-            // Set password on connection factory if available
-        }
         
         StringRedisSerializer stringSerializer = new StringRedisSerializer();
         GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer();
