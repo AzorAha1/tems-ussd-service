@@ -263,21 +263,29 @@ public class ussdcontroller {
             return true;
         }
         
-        // 🔥 FIX: Check if menu was already shown (session exists)
-        Boolean menuShown = (Boolean) retrieveFromSession(phoneNumber, "menuShown");
-        if (Boolean.TRUE.equals(menuShown) || "true".equals(menuShown)) {
+        // ✅ FIXED: Safe type checking for menuShown
+        Object menuShown = retrieveFromSession(phoneNumber, "menuShown");
+        boolean isMenuShown = false;
+        if (menuShown != null) {
+            if (menuShown instanceof Boolean) {
+                isMenuShown = (Boolean) menuShown;
+            } else if (menuShown instanceof String) {
+                isMenuShown = "true".equalsIgnoreCase((String) menuShown);
+            }
+        }
+        
+        if (isMenuShown) {
             System.out.println("❌ Menu already shown - this is a follow-up request");
             return false;
         }
         
-        // 🔥 FIX: Only check for session if input is numeric and single digit
+        // Single digit inputs should NOT be initial
         if (normalizedInput.matches("^[0-9]$")) {
-            // Single digit input should NOT be treated as initial
             System.out.println("❌ Single digit input - not an initial request");
             return false;
         }
         
-        // Check if no session exists for longer/complex inputs
+        // Check if no session exists
         boolean hasNoSession = Arrays.stream(SessionKeys.ALL_KEYS)
             .noneMatch(key -> Boolean.TRUE.equals(redisTemplate.hasKey(phoneNumber + ":" + key)));
         
