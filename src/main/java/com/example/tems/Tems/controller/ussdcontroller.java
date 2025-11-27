@@ -250,7 +250,14 @@ public class ussdcontroller {
         
         System.out.println("🔍 Checking if initial request - input: '" + input + "', normalized: '" + normalizedInput + "'");
         
-        // CRITICAL: Check if input is EXACTLY the shortcode "7447"
+        // CRITICAL FIX: Check if input is the phone number itself (aggregator bug)
+        String normalizedPhone = normalizePhoneNumber(phoneNumber);
+        if (normalizedInput.equals(normalizedPhone.toLowerCase())) {
+            System.out.println("⚠️ Input is phone number - treating as duplicate/malformed request");
+            return false; // Not initial, it's a malformed follow-up
+        }
+        
+        // Check if input is EXACTLY the shortcode "7447"
         if (normalizedInput.equals("7447")) {
             System.out.println("✅ Matched shortcode '7447' - this is initial request");
             return true;
@@ -365,6 +372,17 @@ public class ussdcontroller {
         // Only remove # at the very end of input
         if (inputedText.endsWith("#")) {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
+        }
+
+        if (inputedText.equals(normalizedPhoneNumber) || inputedText.equals(phoneNumber)) {
+            System.out.println("⚠️ Detected phone number as input - ignoring this request");
+        // Check if there's an active session
+            String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
+            if (currentFlow != null) {
+                return "CON Processing your request...";
+            } else {
+                return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+            }
         }
         
         System.out.println("📞 Processing USSD - Phone: " + normalizedPhoneNumber + ", Input: '" + inputedText + "'");
