@@ -53,7 +53,8 @@ public class ussdcontroller {
         public static final String[] NAVIGATION_KEYS = {
             "selectedOrgId", "searchTerm", "currentPage", "totalPages", "org_ids", 
             "isMoreResultsFlow", "currentSubMenu", "hospitalPage", "totalHospitalPages", 
-            "hospital_ids", "pendingHospitalId", "hospitalSearchTerm"
+            "hospital_ids", "pendingHospitalId", "hospitalSearchTerm",
+            "menuShown", "lastInteraction" // Added for menu tracking
         };
         
         public static final String[] ENROLLMENT_KEYS = {
@@ -66,7 +67,8 @@ public class ussdcontroller {
             "isMoreResultsFlow", "currentSubMenu", "hospitalPage", "totalHospitalPages", 
             "hospital_ids", "pendingHospitalId", "hospitalSearchTerm",
             "currentFlow", "enrollmentOrgId", "currentField", "waitingForContinue",
-            "existingEnrollmentFlow", "handlingExistingEnrollment", "viewingDetails"
+            "existingEnrollmentFlow", "handlingExistingEnrollment", "viewingDetails",
+            "menuShown", "lastInteraction" // Added for menu tracking
         };
     }
 
@@ -245,17 +247,9 @@ public class ussdcontroller {
     private boolean isInitialShortcodeRequest(String input, String phoneNumber) {
         if (input == null) return false;
         
-        // Normalize input - remove * and # characters
         String normalizedInput = input.replaceAll("[*#]", "").trim().toLowerCase();
         
         System.out.println("🔍 Checking if initial request - input: '" + input + "', normalized: '" + normalizedInput + "'");
-        
-        // CRITICAL FIX: Check if input is the phone number itself (aggregator bug)
-        String normalizedPhone = normalizePhoneNumber(phoneNumber);
-        if (normalizedInput.equals(normalizedPhone.toLowerCase())) {
-            System.out.println("⚠️ Input is phone number - treating as duplicate/malformed request");
-            return false; // Not initial, it's a malformed follow-up
-        }
         
         // Check if input is EXACTLY the shortcode "7447"
         if (normalizedInput.equals("7447")) {
@@ -269,7 +263,21 @@ public class ussdcontroller {
             return true;
         }
         
-        // Check if no session exists
+        // 🔥 FIX: Check if menu was already shown (session exists)
+        Boolean menuShown = (Boolean) retrieveFromSession(phoneNumber, "menuShown");
+        if (Boolean.TRUE.equals(menuShown) || "true".equals(menuShown)) {
+            System.out.println("❌ Menu already shown - this is a follow-up request");
+            return false;
+        }
+        
+        // 🔥 FIX: Only check for session if input is numeric and single digit
+        if (normalizedInput.matches("^[0-9]$")) {
+            // Single digit input should NOT be treated as initial
+            System.out.println("❌ Single digit input - not an initial request");
+            return false;
+        }
+        
+        // Check if no session exists for longer/complex inputs
         boolean hasNoSession = Arrays.stream(SessionKeys.ALL_KEYS)
             .noneMatch(key -> Boolean.TRUE.equals(redisTemplate.hasKey(phoneNumber + ":" + key)));
         
@@ -489,6 +497,10 @@ public class ussdcontroller {
             if (currentFlow != null && (currentFlow.equals("fhis_enrollment") || currentFlow.equals("formal_fhis_enrollment"))) {
                 return "CON You have an ongoing enrollment.\n1. Continue\n2. Start Fresh\n0. Exit";
             }
+            
+            // 🔥 CRITICAL FIX: Save a session marker to indicate we've shown the menu
+            saveToSession(phone, "menuShown", "true");
+            saveToSession(phone, "lastInteraction", System.currentTimeMillis());
         }
 
         // Welcome menu - this will be shown when input is "7447"
