@@ -54,7 +54,7 @@ public class ussdcontroller {
             "selectedOrgId", "searchTerm", "currentPage", "totalPages", "org_ids", 
             "isMoreResultsFlow", "currentSubMenu", "hospitalPage", "totalHospitalPages", 
             "hospital_ids", "pendingHospitalId", "hospitalSearchTerm",
-            "menuShown", "lastInteraction" // Added for menu tracking
+            "menuShown", "lastInteraction", "awaitingSearchTerm" // Added for menu tracking
         };
         
         public static final String[] ENROLLMENT_KEYS = {
@@ -68,7 +68,7 @@ public class ussdcontroller {
             "hospital_ids", "pendingHospitalId", "hospitalSearchTerm",
             "currentFlow", "enrollmentOrgId", "currentField", "waitingForContinue",
             "existingEnrollmentFlow", "handlingExistingEnrollment", "viewingDetails",
-            "menuShown", "lastInteraction" // Added for menu tracking
+            "menuShown", "lastInteraction", "awaitingSearchTerm" // Added for menu tracking
         };
     }
 
@@ -551,13 +551,54 @@ public class ussdcontroller {
         System.out.println("📋 HandleLevel2 called - text: '" + text + "', phone: '" + phone + "'");
         
         try {
+            // 🔥 NEW: Check if we're waiting for search term
+            Object awaitingSearchObj = retrieveFromSession(phone, "awaitingSearchTerm");
+            boolean awaitingSearch = false;
+            if (awaitingSearchObj != null) {
+                if (awaitingSearchObj instanceof Boolean) {
+                    awaitingSearch = (Boolean) awaitingSearchObj;
+                } else if (awaitingSearchObj instanceof String) {
+                    awaitingSearch = "true".equalsIgnoreCase((String) awaitingSearchObj);
+                }
+            }
+            
+            if (awaitingSearch) {
+                saveToSession(phone, "awaitingSearchTerm", null); // Clear flag
+                
+                // This is a search term, not a menu choice
+                String searchTerm = text.trim();
+                System.out.println("✅ Processing search term: '" + searchTerm + "'");
+                
+                if (searchTerm.isEmpty()) {
+                    return "CON Please enter an organization name:";
+                }
+                
+                Pageable firstPage = PageRequest.of(0, 5);
+                Page<Organization> results = handleOrganizationSearch(searchTerm, firstPage);
+                
+                if (results.isEmpty()) {
+                    return "END No matches for: " + searchTerm;
+                }
+                
+                // Save search data
+                saveToSession(phone, "searchTerm", searchTerm);
+                saveToSession(phone, "currentPage", 0);
+                saveToSession(phone, "totalPages", (int) results.getTotalPages());
+                
+                List<Long> orgIds = results.getContent().stream()
+                        .map(Organization::getId)
+                        .collect(Collectors.toList());
+                saveToSession(phone, "org_ids", orgIds);
+                
+                return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
+            }
+            
             // Clear stale data
             try {
                 saveToSession(phone, "selectedOrgId", null);
                 saveToSession(phone, "currentSubMenu", null);
             } catch (Exception e) {
                 System.err.println("⚠️ Warning: Could not clear session data: " + e.getMessage());
-                // Continue anyway
             }
             
             // Validate input
@@ -576,18 +617,17 @@ public class ussdcontroller {
             switch (choice) {
                 case "1":
                     System.out.println("✅ User selected: Search Organizations");
+                    saveToSession(phone, "awaitingSearchTerm", true);  // 🔥 SAVE STATE
                     return "CON Enter the name or initials of the organization you want to search for:";
                     
                 case "2":
                     System.out.println("✅ User selected: About TEMS");
-                    // DON'T call resetUserSession here - just return the message
                     return "END TEMS (Terracotta Easy Mobile Solutions)\n" +
                         "A service to help you find organization information easily.\n\n" +
                         "Dial *7447# to start.";
                     
                 case "0":
                     System.out.println("✅ User selected: Exit");
-                    // Try to reset session but don't fail if it errors
                     try {
                         resetUserSession(phone);
                     } catch (Exception e) {
