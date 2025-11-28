@@ -377,6 +377,109 @@ public class ussdcontroller {
     //             return "END Session expired. Please start over.";
     //     }
     // }
+    // private String processUssdRequest(String inputText, String phoneNumber) {
+    //     String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+    //     if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
+    //         return "END Invalid phone number provided.";
+    //     }
+        
+    //     String inputedText = (inputText == null) ? "" : inputText.trim();
+        
+    //     // Only remove # at the very end of input
+    //     if (inputedText.endsWith("#")) {
+    //         inputedText = inputedText.substring(0, inputedText.length() - 1);
+    //     }
+
+    //     if (inputedText.equals(normalizedPhoneNumber) || inputedText.equals(phoneNumber)) {
+    //         System.out.println("⚠️ Detected phone number as input - ignoring this request");
+    //     // Check if there's an active session
+    //         String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
+    //         if (currentFlow != null) {
+    //             return "CON Processing your request...";
+    //         } else {
+    //             return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+    //         }
+    //     }
+        
+    //     System.out.println("📞 Processing USSD - Phone: " + normalizedPhoneNumber + ", Input: '" + inputedText + "'");
+
+    //     // Extend session on every request
+    //     extendUserSession(normalizedPhoneNumber);
+
+    //     // CRITICAL: Check if this is initial shortcode request (e.g., "7447")
+    //     if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
+    //         System.out.println("✅ Initial USSD request detected - showing welcome menu");
+    //         clearNavigationSession(normalizedPhoneNumber);
+    //         return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+    //     }
+
+    //     // Check for duplicate requests
+    //     String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.currentTimeMillis()/1000;
+    //     if (isDuplicateRequest(requestId, inputedText)) {
+    //         return "CON Processing your request...";
+    //     }
+
+    //     // Check for FHIS enrollment flow
+    //     String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
+    //     System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
+
+    //     if ("fhis_enrollment".equals(currentFlow)) {
+    //         return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputedText);
+    //     }
+        
+    //     // Parse input into steps
+    //     String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
+    //     int step = parts.length;
+        
+    //     System.out.println("Main USSD Flow - Step: " + step + ", Parts: " + Arrays.toString(parts));
+
+    //     // CRITICAL FIX: Better error handling for each step
+    //     try {
+    //         switch (step) {
+    //             case 0:
+    //                 clearNavigationSession(normalizedPhoneNumber);
+    //                 Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(normalizedPhoneNumber);
+    //                 if (existing.isPresent() && !"completed".equals(existing.get().getCurrentStep()) && 
+    //                     existing.get().getCurrentStep() != null && !"sector_selection".equals(existing.get().getCurrentStep())) {
+                        
+    //                     FhisEnrollment enrollment = existing.get();
+    //                     return "CON Welcome back!\n" +
+    //                         "You have a " + enrollment.getEnrollmentType() + " enrollment in progress.\n" +
+    //                         "Progress: " + getProgressPercentage(enrollment.getCurrentStep()) + "%\n\n" +
+    //                         "1. Continue Enrollment\n" +
+    //                         "2. Start Fresh Search\n" +
+    //                         "0. Exit";
+    //                 }
+    //                 return HandleLevel1(normalizedPhoneNumber, parts, true);
+                    
+    //             case 1:
+    //                 System.out.println("Calling HandleLevel2 with choice: '" + parts[0] + "'");
+    //                 return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
+                    
+    //             case 2:
+    //                 System.out.println("Calling HandleLevel3 with choice: '" + parts[1] + "'");
+    //                 return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
+                    
+    //             case 3:
+    //                 System.out.println("Calling handleLevel4 with choice: '" + parts[2] + "'");
+    //                 return handleLevel4(parts[2], normalizedPhoneNumber, parts);
+                    
+    //             case 4:
+    //                 System.out.println("Calling handlelevel5 with choice: '" + parts[3] + "'");
+    //                 return handlelevel5(parts[3], normalizedPhoneNumber, parts);
+                    
+    //             default:
+    //                 resetUserSession(normalizedPhoneNumber);
+    //                 return "END Session expired. Please start over.";
+    //         }
+    //     } catch (Exception e) {
+    //         System.err.println("❌ Error processing step " + step + ": " + e.getMessage());
+    //         e.printStackTrace();
+            
+    //         // Return user-friendly error instead of generic message
+    //         return "END An error occurred. Please dial *7447# to start over.";
+    //     }
+    // }
     private String processUssdRequest(String inputText, String phoneNumber) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
         if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
@@ -385,14 +488,12 @@ public class ussdcontroller {
         
         String inputedText = (inputText == null) ? "" : inputText.trim();
         
-        // Only remove # at the very end of input
         if (inputedText.endsWith("#")) {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
         }
 
         if (inputedText.equals(normalizedPhoneNumber) || inputedText.equals(phoneNumber)) {
-            System.out.println("⚠️ Detected phone number as input - ignoring this request");
-        // Check if there's an active session
+            System.out.println("⚠️ Detected phone number as input - ignoring");
             String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
             if (currentFlow != null) {
                 return "CON Processing your request...";
@@ -403,82 +504,65 @@ public class ussdcontroller {
         
         System.out.println("📞 Processing USSD - Phone: " + normalizedPhoneNumber + ", Input: '" + inputedText + "'");
 
-        // Extend session on every request
         extendUserSession(normalizedPhoneNumber);
 
-        // CRITICAL: Check if this is initial shortcode request (e.g., "7447")
         if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
-            System.out.println("✅ Initial USSD request detected - showing welcome menu");
+            System.out.println("✅ Initial USSD request detected");
             clearNavigationSession(normalizedPhoneNumber);
             return HandleLevel1(normalizedPhoneNumber, new String[0], true);
         }
 
-        // Check for duplicate requests
         String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.currentTimeMillis()/1000;
         if (isDuplicateRequest(requestId, inputedText)) {
             return "CON Processing your request...";
         }
 
-        // Check for FHIS enrollment flow
+        // 🔥 NEW: SESSION-BASED ROUTING INSTEAD OF PARSING "*"
+        
+        // Check FHIS enrollment flow first
         String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
-        System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
-
         if ("fhis_enrollment".equals(currentFlow)) {
             return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputedText);
         }
-        
-        // Parse input into steps
-        String[] parts = inputedText != null ? inputedText.split("\\*") : new String[0];
-        int step = parts.length;
-        
-        System.out.println("Main USSD Flow - Step: " + step + ", Parts: " + Arrays.toString(parts));
 
-        // CRITICAL FIX: Better error handling for each step
-        try {
-            switch (step) {
-                case 0:
-                    clearNavigationSession(normalizedPhoneNumber);
-                    Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(normalizedPhoneNumber);
-                    if (existing.isPresent() && !"completed".equals(existing.get().getCurrentStep()) && 
-                        existing.get().getCurrentStep() != null && !"sector_selection".equals(existing.get().getCurrentStep())) {
-                        
-                        FhisEnrollment enrollment = existing.get();
-                        return "CON Welcome back!\n" +
-                            "You have a " + enrollment.getEnrollmentType() + " enrollment in progress.\n" +
-                            "Progress: " + getProgressPercentage(enrollment.getCurrentStep()) + "%\n\n" +
-                            "1. Continue Enrollment\n" +
-                            "2. Start Fresh Search\n" +
-                            "0. Exit";
-                    }
-                    return HandleLevel1(normalizedPhoneNumber, parts, true);
-                    
-                case 1:
-                    System.out.println("Calling HandleLevel2 with choice: '" + parts[0] + "'");
-                    return HandleLevel2(parts[0], normalizedPhoneNumber, parts);
-                    
-                case 2:
-                    System.out.println("Calling HandleLevel3 with choice: '" + parts[1] + "'");
-                    return HandleLevel3(parts[1], normalizedPhoneNumber, parts);
-                    
-                case 3:
-                    System.out.println("Calling handleLevel4 with choice: '" + parts[2] + "'");
-                    return handleLevel4(parts[2], normalizedPhoneNumber, parts);
-                    
-                case 4:
-                    System.out.println("Calling handlelevel5 with choice: '" + parts[3] + "'");
-                    return handlelevel5(parts[3], normalizedPhoneNumber, parts);
-                    
-                default:
-                    resetUserSession(normalizedPhoneNumber);
-                    return "END Session expired. Please start over.";
+        // Check if we're waiting for a search term
+        Object awaitingSearchObj = retrieveFromSession(normalizedPhoneNumber, "awaitingSearchTerm");
+        boolean awaitingSearch = false;
+        if (awaitingSearchObj != null) {
+            if (awaitingSearchObj instanceof Boolean) {
+                awaitingSearch = (Boolean) awaitingSearchObj;
+            } else if (awaitingSearchObj instanceof String) {
+                awaitingSearch = "true".equalsIgnoreCase((String) awaitingSearchObj);
             }
-        } catch (Exception e) {
-            System.err.println("❌ Error processing step " + step + ": " + e.getMessage());
-            e.printStackTrace();
-            
-            // Return user-friendly error instead of generic message
-            return "END An error occurred. Please dial *7447# to start over.";
         }
+        
+        if (awaitingSearch) {
+            System.out.println("🔍 User is providing search term");
+            return HandleLevel2(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+        }
+
+        // Check if we have search results (user is selecting from list)
+        List<Long> orgIds = getOrgIdsFromSession(normalizedPhoneNumber);
+        if (orgIds != null && !orgIds.isEmpty()) {
+            System.out.println("📋 User is selecting from organization list");
+            return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+        }
+
+        // Check if we have a selected organization (user is in org menu)
+        Long selectedOrgId = getLongFromSession(normalizedPhoneNumber, "selectedOrgId");
+        if (selectedOrgId != null) {
+            System.out.println("🏢 User is navigating organization menu");
+            String currentSubMenu = (String) retrieveFromSession(normalizedPhoneNumber, "currentSubMenu");
+            if ("more_info".equals(currentSubMenu)) {
+                return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+            } else {
+                return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+            }
+        }
+
+        // Default: main menu selection
+        System.out.println("🏠 User is at main menu");
+        return HandleLevel2(inputedText, normalizedPhoneNumber, new String[]{inputedText});
     }
     private static final int MAX_ORGANIZATIONS_PER_PAGE = 5;
     // private static final int SESSION_TIMEOUT_MINUTES = 10;
