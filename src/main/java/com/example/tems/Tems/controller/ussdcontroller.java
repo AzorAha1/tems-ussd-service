@@ -771,8 +771,8 @@ public class ussdcontroller {
                 "1. Contact Info\n" +
                 "2. Address\n" +
                 "3. Description\n" +
-                "4. More\n" +
-                "0. Back to search results";
+                "4. More Menu\n" +
+                "0. Main Menu";
     }
 
     // private String HandleLevel3(String choice, String phone, String[] parts) {
@@ -920,7 +920,10 @@ public class ussdcontroller {
                 // FIXED: Pass phone number correctly
                 return showMoreOptions(org, phone);
             case "0":
-                return backToSearchResults(phone);
+                // return backToSearchResults(phone);
+                System.out.println("User pressed '0' - returning to main menu");
+                clearNavigationSession(phone);
+                return HandleLevel1(phone, new String[0], false);
             default:
                 return "END Invalid choice";
         }
@@ -1007,11 +1010,23 @@ public class ussdcontroller {
             
             switch (choice) {
                 case "1":
-                    return handleFHISEnrollment(org, phone);
+                    if (orgName.contains("FHIS") || orgName.contains("FCT HEALTH") || orgName.contains("FCT HEALTH INSURANCE")) {
+                        System.out.println("User selected FHIS enrollment from More Info menu");
+                        return handleFHISEnrollment(org, phone);
+                    } else {
+                        System.out.println("Invalid FHIS enrollment attempt for non-FHIS org");
+                        return "END Invalid choice for More Info menu.";
+                    }
                 case "2":
-                    return handleChangeHospital(phone);
+                    if (orgName.contains("FHIS") || orgName.contains("FCT HEALTH") || orgName.contains("FCT HEALTH INSURANCE")) {
+                        return handleChangeHospital(phone);
+                    } else {
+                        return "END Invalid option for this organization.";
+                    }
                 case "0":
-                    return showorgmenu(org);
+                    System.out.println("User selected '0' to return to main org menu from More Info");
+                    clearNavigationSession(phone);
+                    saveToSession(phone, "menuShow", true);
                 default:
                     return "END Invalid choice for More Info menu.";
             }
@@ -1073,11 +1088,11 @@ public class ussdcontroller {
             return "CON " + org.getName() + " - More Info:\n" +
                     "1. Enroll\n" +
                     "2. Change Hospital\n" +
-                    "0. Back to menu";
+                    "0. Main Menu";
         } else {
             return "CON " + org.getName() + " - More Info:\n" +
                     "No additional services available.\n" +
-                    "0. Back to menu";
+                    "0. Main Menu";
         }
     }
     // handle change hospital
