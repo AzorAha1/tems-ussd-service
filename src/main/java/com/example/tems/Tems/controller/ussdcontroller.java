@@ -488,10 +488,12 @@ public class ussdcontroller {
         
         String inputedText = (inputText == null) ? "" : inputText.trim();
         
+        // only remove # at teh very end of input
         if (inputedText.endsWith("#")) {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
         }
 
+        // detect if input is phone number
         if (inputedText.equals(normalizedPhoneNumber) || inputedText.equals(phoneNumber)) {
             System.out.println("⚠️ Detected phone number as input - ignoring");
             String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
@@ -521,7 +523,9 @@ public class ussdcontroller {
         
         // Check FHIS enrollment flow first
         String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
+        System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
         if ("fhis_enrollment".equals(currentFlow)) {
+            System.out.println("Routing to Fhis Enrollment flow");
             return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputedText);
         }
 
@@ -540,6 +544,19 @@ public class ussdcontroller {
             System.out.println("🔍 User is providing search term");
             return HandleLevel2(inputedText, normalizedPhoneNumber, new String[]{inputedText});
         }
+        // check selectedorgid before org_ids
+        Long selectedOrgId = getLongFromSession(normalizedPhoneNumber, "selectedOrgId");
+        if (selectedOrgId != null) {
+            System.out.println("🏢 User is navigating organization menu");
+            String currentSubMenu = (String) retrieveFromSession(normalizedPhoneNumber, "currentSubMenu");
+            if ("more_info".equals(currentSubMenu)) {
+                System.out.println("User is in 'more_info' submenu");
+                return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+            } else {
+                System.out.println("User is in main org menu");
+                return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+            }
+        } 
 
         // Check if we have search results (user is selecting from list)
         List<Long> orgIds = getOrgIdsFromSession(normalizedPhoneNumber);
@@ -547,19 +564,6 @@ public class ussdcontroller {
             System.out.println("📋 User is selecting from organization list");
             return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
         }
-
-        // Check if we have a selected organization (user is in org menu)
-        Long selectedOrgId = getLongFromSession(normalizedPhoneNumber, "selectedOrgId");
-        if (selectedOrgId != null) {
-            System.out.println("🏢 User is navigating organization menu");
-            String currentSubMenu = (String) retrieveFromSession(normalizedPhoneNumber, "currentSubMenu");
-            if ("more_info".equals(currentSubMenu)) {
-                return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
-            } else {
-                return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
-            }
-        }
-
         // Default: main menu selection
         System.out.println("🏠 User is at main menu");
         return HandleLevel2(inputedText, normalizedPhoneNumber, new String[]{inputedText});
