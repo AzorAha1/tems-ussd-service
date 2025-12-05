@@ -482,9 +482,9 @@ public class ussdcontroller {
 
     private String showorgmenu(Organization orgofchoice) {
         return "CON " + orgofchoice.getName() + "\n" +
-                "1. Contact Info\n" +
-                "2. Address\n" +
-                "3. Description\n" +
+                "1. Organization Contact Info\n" +
+                "2. Organizaton Address\n" +
+                "3. About Organization\n" +
                 "4. More Menu\n" +
                 "0. Main Menu";
     }
