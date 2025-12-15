@@ -1917,10 +1917,20 @@ public class ussdcontroller {
                 if (lastInput == null || lastInput.trim().isEmpty()) {
                     return "CON Enter hospital name to search\n(or type 'list' to see all):";
                 }
+                if ("1".equals(lastInput.trim())) {
+                    String lastSearch = (String) retrieveFromSession(phone, "lastHospitalSearchTerm");
+                    if (lastSearch !=null ) {
+                        return showHospitalList(phone, MAX_ORGANIZATIONS_PER_PAGE);
+                    }
+                }
+                if ("0".equals(lastInput.trim())) {
+                    return moveToNextStage(phone, enrollment);
+                }
                 
                 if ("list".equalsIgnoreCase(lastInput.trim())) {
                     return showHospitalList(phone, 0);
                 } else {
+                    saveToSession(phone, "lastHospitalSearchTerm", lastInput.trim());
                     return searchHospitals(phone, lastInput.trim());
                 }
                 
@@ -2018,12 +2028,16 @@ public class ussdcontroller {
             Page<Hospital> hospitals = hospitalRepository.searchActiveHospitals(searchTerm, pageable);
             
             if (hospitals.isEmpty()) {
+                // keep the last search term in session so to detect menu choice
+                saveToSession(phone, "lastHospitalSearchTerm", searchTerm);
                 return "CON No hospitals found for: " + searchTerm + 
                        "\n\nTry different keywords or:\n" +
                        "1. View all hospitals\n" +
                        "0. Back";
             }
             
+            // Clear last search term
+            saveToSession(phone, "lastHospitalSearchTerm", null);
             saveToSession(phone, "hospitalSearchTerm", searchTerm);
             saveToSession(phone, "hospitalPage", 0);
             saveToSession(phone, "totalHospitalPages", (int) hospitals.getTotalPages());
