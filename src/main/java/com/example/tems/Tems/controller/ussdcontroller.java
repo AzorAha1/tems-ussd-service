@@ -297,20 +297,20 @@ public class ussdcontroller {
         }
 
         // Check if we're waiting for a search term
-        // Object awaitingSearchObj = retrieveFromSession(normalizedPhoneNumber, "awaitingSearchTerm");
-        // boolean awaitingSearch = false;
-        // if (awaitingSearchObj != null) {
-        //     if (awaitingSearchObj instanceof Boolean) {
-        //         awaitingSearch = (Boolean) awaitingSearchObj;
-        //     } else if (awaitingSearchObj instanceof String) {
-        //         awaitingSearch = "true".equalsIgnoreCase((String) awaitingSearchObj);
-        //     }
-        // }
+        Object awaitingSearchObj = retrieveFromSession(normalizedPhoneNumber, "awaitingSearchTerm");
+        boolean awaitingSearch = false;
+        if (awaitingSearchObj != null) {
+            if (awaitingSearchObj instanceof Boolean) {
+                awaitingSearch = (Boolean) awaitingSearchObj;
+            } else if (awaitingSearchObj instanceof String) {
+                awaitingSearch = "true".equalsIgnoreCase((String) awaitingSearchObj);
+            }
+        }
         
-        // if (awaitingSearch) {
-        //     System.out.println("🔍 User is providing search term");
-        //     return HandleLevel2(inputedText, normalizedPhoneNumber, new String[]{inputedText});
-        // }
+        if (awaitingSearch) {
+            System.out.println("🔍 User is providing search term");
+            return HandleLevel2(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+        }
         // check selectedorgid before org_ids
         Long selectedOrgId = getLongFromSession(normalizedPhoneNumber, "selectedOrgId");
         if (selectedOrgId != null) {
@@ -337,193 +337,124 @@ public class ussdcontroller {
     }
     private static final int MAX_ORGANIZATIONS_PER_PAGE = 5;
     
-    // private String HandleLevel1(String phone, String[] parts, boolean isInitial) {
-    //     if (isInitial) {
-    //         // Check if user is in the middle of FHIS enrollment
-    //         String currentFlow = (String) retrieveFromSession(phone, "currentFlow");
-    //         if (currentFlow != null && (currentFlow.equals("fhis_enrollment") || currentFlow.equals("formal_fhis_enrollment"))) {
-    //             return "CON You have an ongoing enrollment.\n1. Continue\n2. Start Fresh\n0. Exit";
-    //         }
-            
-    //         // 🔥 CRITICAL FIX: Save a session marker to indicate we've shown the menu
-    //         saveToSession(phone, "menuShown", "true");
-    //         saveToSession(phone, "lastInteraction", System.currentTimeMillis());
-    //     }
-
-    //     // Welcome menu - this will be shown when input is "7447"
-    //     return "CON Welcome to TEMS SERVICE\n\n" +
-    //         "1. Search Organizations\n" +
-    //         "2. About TEMS\n" +
-    //         "0. Exit";
-    // }
     private String HandleLevel1(String phone, String[] parts, boolean isInitial) {
         if (isInitial) {
+            // Check if user is in the middle of FHIS enrollment
             String currentFlow = (String) retrieveFromSession(phone, "currentFlow");
             if (currentFlow != null && (currentFlow.equals("fhis_enrollment") || currentFlow.equals("formal_fhis_enrollment"))) {
                 return "CON You have an ongoing enrollment.\n1. Continue\n2. Start Fresh\n0. Exit";
             }
+            
+            // 🔥 CRITICAL FIX: Save a session marker to indicate we've shown the menu
             saveToSession(phone, "menuShown", "true");
             saveToSession(phone, "lastInteraction", System.currentTimeMillis());
         }
 
+        // Welcome menu - this will be shown when input is "7447"
         return "CON Welcome to TEMS SERVICE\n\n" +
-            "Enter organization name or initials to search:\n\n" +
-            "1. About TEMS\n" +
+            "1. Search Organizations\n" +
+            "2. About TEMS\n" +
             "0. Exit";
     }
 
-    // private String HandleLevel2(String text, String phone, String[] parts) {
-    //     System.out.println("📋 HandleLevel2 called - text: '" + text + "', phone: '" + phone + "'");
-        
-    //     try {
-    //         // 🔥 NEW: Check if we're waiting for search term
-    //         Object awaitingSearchObj = retrieveFromSession(phone, "awaitingSearchTerm");
-    //         boolean awaitingSearch = false;
-    //         if (awaitingSearchObj != null) {
-    //             if (awaitingSearchObj instanceof Boolean) {
-    //                 awaitingSearch = (Boolean) awaitingSearchObj;
-    //             } else if (awaitingSearchObj instanceof String) {
-    //                 awaitingSearch = "true".equalsIgnoreCase((String) awaitingSearchObj);
-    //             }
-    //         }
-            
-    //         if (awaitingSearch) {
-    //             saveToSession(phone, "awaitingSearchTerm", null); // Clear flag
-                
-    //             // This is a search term, not a menu choice
-    //             String searchTerm = text.trim();
-    //             System.out.println("✅ Processing search term: '" + searchTerm + "'");
-                
-    //             if (searchTerm.isEmpty()) {
-    //                 return "CON Please enter an organization name:";
-    //             }
-                
-    //             Pageable firstPage = PageRequest.of(0, 5);
-    //             Page<Organization> results = handleOrganizationSearch(searchTerm, firstPage);
-                
-    //             if (results.isEmpty()) {
-    //                 return "END No matches for: " + searchTerm;
-    //             }
-                
-    //             // Save search data
-    //             saveToSession(phone, "searchTerm", searchTerm);
-    //             saveToSession(phone, "currentPage", 0);
-    //             saveToSession(phone, "totalPages", (int) results.getTotalPages());
-                
-    //             List<Long> orgIds = results.getContent().stream()
-    //                     .map(Organization::getId)
-    //                     .collect(Collectors.toList());
-    //             saveToSession(phone, "org_ids", orgIds);
-                
-    //             return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
-    //         }
-            
-    //         // Clear stale data
-    //         try {
-    //             saveToSession(phone, "selectedOrgId", null);
-    //             saveToSession(phone, "currentSubMenu", null);
-    //         } catch (Exception e) {
-    //             System.err.println("⚠️ Warning: Could not clear session data: " + e.getMessage());
-    //         }
-            
-    //         // Validate input
-    //         if (text == null || text.trim().isEmpty()) {
-    //             System.err.println("❌ Empty text in HandleLevel2");
-    //             return "CON Invalid input. Please select:\n\n" +
-    //                 "1. Search Organizations\n" +
-    //                 "2. About TEMS\n" +
-    //                 "0. Exit";
-    //         }
-            
-    //         String choice = text.trim();
-    //         System.out.println("Processing choice: '" + choice + "'");
-            
-    //         // Handle menu choices
-    //         switch (choice) {
-    //             case "1":
-    //                 System.out.println("✅ User selected: Search Organizations");
-    //                 saveToSession(phone, "awaitingSearchTerm", true);  // 🔥 SAVE STATE
-    //                 return "CON Enter the name or initials of the organization you want to search for:";
-                    
-    //             case "2":
-    //                 System.out.println("✅ User selected: About TEMS");
-    //                 return "END TEMS (Terracotta Easy Mobile Solutions)\n" +
-    //                     "A service to help you find organization information easily.\n\n" +
-    //                     "Dial *7447# to start.";
-                    
-    //             case "0":
-    //                 System.out.println("✅ User selected: Exit");
-    //                 try {
-    //                     resetUserSession(phone);
-    //                 } catch (Exception e) {
-    //                     System.err.println("⚠️ Session reset failed but continuing: " + e.getMessage());
-    //                 }
-    //                 return "END Thank you for using TEMS SERVICE!";
-                    
-    //             default:
-    //                 System.out.println("❌ Invalid choice: '" + choice + "'");
-    //                 return "CON Invalid choice. Please select:\n\n" +
-    //                     "1. Search Organizations\n" +
-    //                     "2. About TEMS\n" +
-    //                     "0. Exit";
-    //         }
-            
-    //     } catch (Exception e) {
-    //         System.err.println("❌ CRITICAL ERROR in HandleLevel2: " + e.getMessage());
-    //         e.printStackTrace();
-    //         return "END Error processing request. Please dial *7447# to try again.";
-    //     }
-    // }
     private String HandleLevel2(String text, String phone, String[] parts) {
-        System.out.println("HandleLevel2 called - text: '" + text + "', phone: '" + phone + "'");
+        System.out.println("📋 HandleLevel2 called - text: '" + text + "', phone: '" + phone + "'");
         
         try {
-            saveToSession(phone, "selectedOrgId", null);
-            saveToSession(phone, "currentSubMenu", null);
-
-            if (text == null || text.trim().isEmpty()) {
-                return "CON Welcome to TEMS SERVICE\n\nEnter organization name or initials to search:\n\n1. About TEMS\n0. Exit";
+            // 🔥 NEW: Check if we're waiting for search term
+            Object awaitingSearchObj = retrieveFromSession(phone, "awaitingSearchTerm");
+            boolean awaitingSearch = false;
+            if (awaitingSearchObj != null) {
+                if (awaitingSearchObj instanceof Boolean) {
+                    awaitingSearch = (Boolean) awaitingSearchObj;
+                } else if (awaitingSearchObj instanceof String) {
+                    awaitingSearch = "true".equalsIgnoreCase((String) awaitingSearchObj);
+                }
             }
-
+            
+            if (awaitingSearch) {
+                saveToSession(phone, "awaitingSearchTerm", null); // Clear flag
+                
+                // This is a search term, not a menu choice
+                String searchTerm = text.trim();
+                System.out.println("✅ Processing search term: '" + searchTerm + "'");
+                
+                if (searchTerm.isEmpty()) {
+                    return "CON Please enter an organization name:";
+                }
+                
+                Pageable firstPage = PageRequest.of(0, 5);
+                Page<Organization> results = handleOrganizationSearch(searchTerm, firstPage);
+                
+                if (results.isEmpty()) {
+                    return "END No matches for: " + searchTerm;
+                }
+                
+                // Save search data
+                saveToSession(phone, "searchTerm", searchTerm);
+                saveToSession(phone, "currentPage", 0);
+                saveToSession(phone, "totalPages", (int) results.getTotalPages());
+                
+                List<Long> orgIds = results.getContent().stream()
+                        .map(Organization::getId)
+                        .collect(Collectors.toList());
+                saveToSession(phone, "org_ids", orgIds);
+                
+                return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
+            }
+            
+            // Clear stale data
+            try {
+                saveToSession(phone, "selectedOrgId", null);
+                saveToSession(phone, "currentSubMenu", null);
+            } catch (Exception e) {
+                System.err.println("⚠️ Warning: Could not clear session data: " + e.getMessage());
+            }
+            
+            // Validate input
+            if (text == null || text.trim().isEmpty()) {
+                System.err.println("❌ Empty text in HandleLevel2");
+                return "CON Invalid input. Please select:\n\n" +
+                    "1. Search Organizations\n" +
+                    "2. About TEMS\n" +
+                    "0. Exit";
+            }
+            
             String choice = text.trim();
-
+            System.out.println("Processing choice: '" + choice + "'");
+            
+            // Handle menu choices
             switch (choice) {
                 case "1":
+                    System.out.println("✅ User selected: Search Organizations");
+                    saveToSession(phone, "awaitingSearchTerm", true);  // 🔥 SAVE STATE
+                    return "CON Enter the name or initials of the organization you want to search for:";
+                    
+                case "2":
+                    System.out.println("✅ User selected: About TEMS");
                     return "END TEMS (Terracotta Easy Mobile Solutions)\n" +
-                        "A service to help you find organization information easily.\n\nDial *7447# to start.";
-
+                        "A service to help you find organization information easily.\n\n" +
+                        "Dial *7447# to start.";
+                    
                 case "0":
-                    try { resetUserSession(phone); } catch (Exception e) { /* ignore */ }
+                    System.out.println("✅ User selected: Exit");
+                    try {
+                        resetUserSession(phone);
+                    } catch (Exception e) {
+                        System.err.println("⚠️ Session reset failed but continuing: " + e.getMessage());
+                    }
                     return "END Thank you for using TEMS SERVICE!";
-
+                    
                 default:
-                    // Treat any other input as a search term directly
-                    String searchTerm = choice;
-                    if (searchTerm.length() < 2) {
-                        return "CON Please enter at least 2 characters to search:\n\n1. About TEMS\n0. Exit";
-                    }
-
-                    Pageable firstPage = PageRequest.of(0, 5);
-                    Page<Organization> results = handleOrganizationSearch(searchTerm, firstPage);
-
-                    if (results.isEmpty()) {
-                        return "CON No matches found for: " + searchTerm + "\n\nTry a different name:\n\n1. About TEMS\n0. Exit";
-                    }
-
-                    saveToSession(phone, "searchTerm", searchTerm);
-                    saveToSession(phone, "currentPage", 0);
-                    saveToSession(phone, "totalPages", (int) results.getTotalPages());
-
-                    List<Long> orgIds = results.getContent().stream()
-                            .map(Organization::getId)
-                            .collect(Collectors.toList());
-                    saveToSession(phone, "org_ids", orgIds);
-
-                    return showOrganizationoptions(results.getContent(), 0, (int) results.getTotalPages());
+                    System.out.println("❌ Invalid choice: '" + choice + "'");
+                    return "CON Invalid choice. Please select:\n\n" +
+                        "1. Search Organizations\n" +
+                        "2. About TEMS\n" +
+                        "0. Exit";
             }
-
+            
         } catch (Exception e) {
-            System.err.println("CRITICAL ERROR in HandleLevel2: " + e.getMessage());
+            System.err.println("❌ CRITICAL ERROR in HandleLevel2: " + e.getMessage());
             e.printStackTrace();
             return "END Error processing request. Please dial *7447# to try again.";
         }
@@ -549,30 +480,14 @@ public class ussdcontroller {
         return menu.toString();
     }
 
-    // private String showorgmenu(Organization orgofchoice) {
-    //     return "CON " + orgofchoice.getName() + "\n" +
-    //             "1. Organization Contact Info\n" +
-    //             "2. Organizaton Address\n" +
-    //             "3. About Organization\n" +
-    //             "4. More Menu\n" +
-    //             "0. Main Menu";
-    // }
     private String showorgmenu(Organization orgofchoice) {
         return "CON " + orgofchoice.getName() + "\n" +
-                "1. Menu\n" +
-                "2. About\n" +
-                "3. Contact & Address\n" +
-                "4. Guidelines\n" +
-                "5. FAQs\n" +
-                "6. Links\n" +
-                "7. Register/Verify\n" +
-                "8. Complaints\n" +
-                "9. Tips/Updates\n" +
-                "10. More Info\n" +
-                "00. Previous\n" +
+                "1. Organization Contact Info\n" +
+                "2. Organizaton Address\n" +
+                "3. About Organization\n" +
+                "4. More Menu\n" +
                 "0. Main Menu";
     }
-    
 
     private String HandleLevel3(String choice, String phone, String[] parts) {
     // Check if we're coming from "1. Search Organizations"
@@ -687,99 +602,28 @@ public class ussdcontroller {
     }
 
 
-    // private String handleOrganizationMenu(String choice, Organization org, String phone) {
-    //     switch (choice) {
-    //         case "1":
-    //             return "CON Contact Info:\nPhone: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
-    //                     "\n0. Back to menu";
-    //         case "2":
-    //             return "CON Address:\n" + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") +
-    //                     "\n0. Back to menu";
-    //         case "3":
-    //             return "CON Description:\n" + (org.getDescription() != null ? org.getDescription() : "Not available") +
-    //                     "\n0. Back to menu";
-    //         case "4":
-    //             // FIXED: Pass phone number correctly
-    //             return showMoreOptions(org, phone);
-    //         case "0":
-    //             // return backToSearchResults(phone);
-    //             System.out.println("User pressed '0' - returning to main menu");
-    //             clearNavigationSession(phone);
-    //             return HandleLevel1(phone, new String[0], false);
-    //         default:
-    //             return "END Invalid choice";
-    //     }
-    // }
     private String handleOrganizationMenu(String choice, Organization org, String phone) {
         switch (choice) {
-            case "1": // Proceed to Menu - re-shows the org menu
-                return showorgmenu(org);
-
-            case "2": // About Organization
-                return "CON About:\n" + (org.getDescription() != null ? org.getDescription() : "Not available") +
-                        "\n\n0. Back";
-
-            case "3": // Contact Info & Address
-                return "CON Contact: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "N/A") +
-                        "\nAddress: " + (org.getContactAddress() != null ? org.getContactAddress() : "N/A") +
-                        "\n\n0. Back";
-
-            case "4": // Guidelines & Procedures
-                return "CON Guidelines & Procedures:\nNot available at this time.\n\n0. Back";
-
-            case "5": // FAQs
-                return "CON FAQs:\nNot available at this time.\n\n0. Back";
-
-            case "6": // Links
-                return "CON Links:\nNot available at this time.\n\n0. Back";
-
-            case "7": // Register/Submit/Verify
-                return showMoreOptions(org, phone); // Reuses your existing FHIS enrollment flow
-
-            case "8": // Call Line / Complaint
-                return "CON Call Line/Complaint:\nPhone: " +
-                        (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
-                        "\n\n0. Back";
-
-            case "9": // Tips/Updates
-                return "CON Tips/Updates:\nNo updates at this time.\n\n0. Back";
-
-            case "10": // More Info
+            case "1":
+                return "CON Contact Info:\nPhone: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
+                        "\n0. Back to menu";
+            case "2":
+                return "CON Address:\n" + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") +
+                        "\n0. Back to menu";
+            case "3":
+                return "CON Description:\n" + (org.getDescription() != null ? org.getDescription() : "Not available") +
+                        "\n0. Back to menu";
+            case "4":
+                // FIXED: Pass phone number correctly
                 return showMoreOptions(org, phone);
-
-            case "*": // Previous - go back to search results
-                saveToSession(phone, "selectedOrgId", null);
-                saveToSession(phone, "currentSubMenu", null);
-                return backToSearchResults(phone);
-
-            case "0": // Main Menu
+            case "0":
+                // return backToSearchResults(phone);
+                System.out.println("User pressed '0' - returning to main menu");
                 clearNavigationSession(phone);
                 return HandleLevel1(phone, new String[0], false);
-
             default:
-                return "CON Invalid choice.\n\n" + showorgmenu(org).substring(4); // Re-show menu
+                return "END Invalid choice";
         }
-    }
-    private String backToSearchResults(String phone) {
-        List<Long> orgIds = getOrgIdsFromSession(phone);
-        Integer currentPage = (Integer) retrieveFromSession(phone, "currentPage");
-        Integer totalPages = (Integer) retrieveFromSession(phone, "totalPages");
-
-        if (orgIds == null || orgIds.isEmpty()) {
-            return HandleLevel1(phone, new String[0], false);
-        }
-
-        // Re-fetch the organizations for the current page
-        String searchTerm = (String) retrieveFromSession(phone, "searchTerm");
-        if (searchTerm != null) {
-            Pageable pageable = PageRequest.of(currentPage != null ? currentPage : 0, 5);
-            Page<Organization> results = handleOrganizationSearch(searchTerm, pageable);
-            if (!results.isEmpty()) {
-                return showOrganizationoptions(results.getContent(), currentPage != null ? currentPage : 0, totalPages != null ? totalPages : 1);
-            }
-        }
-
-        return HandleLevel1(phone, new String[0], false);
     }
 
     private String handleLevel4(String choice, String phone, String[] parts) {
