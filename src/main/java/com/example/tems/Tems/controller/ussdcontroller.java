@@ -482,10 +482,15 @@ public class ussdcontroller {
 
     private String showorgmenu(Organization orgofchoice) {
         return "CON " + orgofchoice.getName() + "\n" +
-                "1. Organization Contact Info\n" +
-                "2. Organizaton Address\n" +
-                "3. About Organization\n" +
-                "4. More Menu\n" +
+                "1. Register/Verify\n" +
+                "2. Request\n" +
+                "3. Report\n" +
+                "4. Guidelines & Procedures\n" +
+                "5. FAQs/Links\n" +
+                "6. Call Lines\n" +
+                "7. Tips/Updates\n" +
+                "8. About Organization\n" +
+                "9. More Info\n" +
                 "0. Main Menu";
     }
 
@@ -604,25 +609,44 @@ public class ussdcontroller {
 
     private String handleOrganizationMenu(String choice, Organization org, String phone) {
         switch (choice) {
-            case "1":
-                return "CON Contact Info:\nPhone: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
-                        "\n0. Back to menu";
-            case "2":
-                return "CON Address:\n" + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") +
-                        "\n0. Back to menu";
-            case "3":
-                return "CON Description:\n" + (org.getDescription() != null ? org.getDescription() : "Not available") +
-                        "\n0. Back to menu";
-            case "4":
-                // FIXED: Pass phone number correctly
+            case "1": // Register/Verify
+                return showMoreOptions(org, phone); // reuses your FHIS enrollment flow
+                
+            case "2": // Request
+                return "CON Request:\nThis service is coming soon.\n\n0. Back";
+                
+            case "3": // Report
+                return "CON Report:\nThis service is coming soon.\n\n0. Back";
+                
+            case "4": // Guidelines & Procedures
+                return "CON Guidelines & Procedures:\nNot available at this time.\n\n0. Back";
+                
+            case "5": // FAQs/Links
+                return "CON FAQs/Links:\nNot available at this time.\n\n0. Back";
+                
+            case "6": // Call Lines
+                return "CON Call Lines:\n" + 
+                        (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
+                        "\n\n0. Back";
+                
+            case "7": // Tips/Updates
+                return "CON Tips/Updates:\nNo updates at this time.\n\n0. Back";
+                
+            case "8": // About Organization
+                return "CON About " + org.getName() + ":\n" +
+                        (org.getDescription() != null ? org.getDescription() : "Not available") +
+                        "\n\nAddress: " + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") +
+                        "\n\n0. Back";
+                
+            case "9": // More Info
                 return showMoreOptions(org, phone);
-            case "0":
-                // return backToSearchResults(phone);
-                System.out.println("User pressed '0' - returning to main menu");
+                
+            case "0": // Main Menu
                 clearNavigationSession(phone);
                 return HandleLevel1(phone, new String[0], false);
+                
             default:
-                return "END Invalid choice";
+                return showorgmenu(org); // Re-show menu on invalid input
         }
     }
 
