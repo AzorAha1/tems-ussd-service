@@ -485,11 +485,11 @@ public class ussdcontroller {
                 "1. Register/Verify\n" +
                 "2. Request\n" +
                 "3. Report\n" +
-                "4. Guidelines & Procedures\n" +
-                "5. FAQs/Links\n" +
+                "4. Guidelines\n" +
+                "5. FAQs & Links\n" +
                 "6. Call Lines\n" +
-                "7. Tips/Updates\n" +
-                "8. About Organization\n" +
+                "7. Tips & Updates\n" +
+                "8. About\n" +
                 "9. More Info\n" +
                 "0. Main Menu";
     }
