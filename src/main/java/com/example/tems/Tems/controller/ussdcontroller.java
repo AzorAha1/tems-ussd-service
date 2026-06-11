@@ -506,7 +506,11 @@ public class ussdcontroller {
     }
 
     private String showorgmenu(Organization orgofchoice) {
-        return "CON " + orgofchoice.getName() + "\n" +
+        boolean isFFS = orgofchoice.getName().toUpperCase().contains("FIRE") 
+                    || orgofchoice.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") 
+                    || orgofchoice.getName().toUpperCase().contains("FFS");
+        
+        StringBuilder menu = new StringBuilder("CON " + orgofchoice.getName() + "\n" +
                 "1. Register/Verify\n" +
                 "2. Request\n" +
                 "3. Report\n" +
@@ -515,8 +519,14 @@ public class ussdcontroller {
                 "6. Call Lines\n" +
                 "7. Tips & Updates\n" +
                 "8. About\n" +
-                "9. More Info\n" +
-                "0. Main Menu";
+                "9. More Info\n");
+        
+        if (isFFS) {
+            menu.append("10. Account / Profile\n");
+        }
+        
+        menu.append("0. Main Menu");
+        return menu.toString();
     }
 
     private String HandleLevel3(String choice, String phone, String[] parts) {
