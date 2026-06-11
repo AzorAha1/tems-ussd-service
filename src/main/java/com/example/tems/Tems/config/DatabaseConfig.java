@@ -13,7 +13,7 @@ public class DatabaseConfig {
     
     @Bean
     @Primary
-    @ConfigurationProperties("spring.datasource")
+    // @ConfigurationProperties("spring.datasource")
     public DataSource dataSource() {
         String dbUrl = System.getenv("DATABASE_URL");
         

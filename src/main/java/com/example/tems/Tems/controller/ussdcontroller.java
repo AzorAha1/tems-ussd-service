@@ -1,21 +1,5 @@
 package com.example.tems.Tems.controller;
 
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import java.util.HashMap;
-import java.util.Map;
-import com.example.tems.Tems.Session.RedisConfig;
-import com.example.tems.Tems.model.FhisEnrollment;
-import com.example.tems.Tems.model.Hospital;
-import com.example.tems.Tems.model.Organization;
-import com.example.tems.Tems.repository.FhisEnrollmentRepository;
-import com.example.tems.Tems.repository.HospitalRepository;
-import com.example.tems.Tems.repository.OrganizationRepository;
-import com.example.tems.Tems.service.AggregatorService;
-import com.example.tems.Tems.service.SubscriptionService;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -23,17 +7,32 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.example.tems.Tems.model.FfsRegistration;
+import com.example.tems.Tems.model.FhisEnrollment;
+import com.example.tems.Tems.model.Hospital;
+import com.example.tems.Tems.model.Organization;
+import com.example.tems.Tems.repository.FfsRegistrationRepository;
+import com.example.tems.Tems.repository.FhisEnrollmentRepository;
+import com.example.tems.Tems.repository.HospitalRepository;
+import com.example.tems.Tems.repository.OrganizationRepository;
+import com.example.tems.Tems.service.AggregatorService;
+import com.example.tems.Tems.service.SubscriptionService;
 
 @RestController
 public class ussdcontroller {
@@ -44,6 +43,7 @@ public class ussdcontroller {
     // private SubscriptionService subscriptionService;
     private FhisEnrollmentRepository FhisEnrollmentRepository;
     private final HospitalRepository hospitalRepository;
+    private final FfsRegistrationRepository ffsRegistrationRepository;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -68,18 +68,30 @@ public class ussdcontroller {
             "hospital_ids", "pendingHospitalId", "hospitalSearchTerm",
             "currentFlow", "enrollmentOrgId", "currentField", "waitingForContinue",
             "existingEnrollmentFlow", "handlingExistingEnrollment", "viewingDetails",
-            "menuShown", "lastInteraction", "awaitingSearchTerm" // Added for menu tracking
+            "menuShown", "lastInteraction", "awaitingSearchTerm", // Added for menu tracking
+            "ffsRegFlow", "ffsRegType", "ffsRegField",
+            "ffsRegName", "ffsRegAddress", "ffsRegState",
+            "ffsRegOccupation", "ffsRegOrg"
         };
+
+        // FFS registration keys can be added here if needed
+        public static final String[] FFS_REGISTRATION_KEYS = {
+            "ffsRegFlow", "ffsRegType", "ffsRegField", 
+            "ffsRegName", "ffsRegAddress", "ffsRegState", 
+            "ffsRegOccupation", "ffsRegOrg"
+        };
+
     }
 
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository) {
         this.organizationRepository = organizationRepository;
         // this.aggregatorService = aggregatorService;
         // this.subscriptionService = subscriptionService;
         this.FhisEnrollmentRepository = FhisEnrollmentRepository;
         this.hospitalRepository = hospitalRepository;
+        this.ffsRegistrationRepository = ffsRegistrationRepository;
         
     }
     
@@ -295,6 +307,12 @@ public class ussdcontroller {
             System.out.println("Routing to Fhis Enrollment flow");
             return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputedText);
         }
+        // 🔥 FIX: Move FFS Registration flow check HERE, before selectedOrgId
+        String ffsRegFlow = (String) retrieveFromSession(normalizedPhoneNumber, "ffsRegFlow");
+        if (ffsRegFlow != null) {
+            System.out.println("Routing to FFS Registration flow: " + ffsRegFlow);
+            return handleRegistrationFlow(normalizedPhoneNumber, inputedText);
+        }
 
         // Check if we're waiting for a search term
         Object awaitingSearchObj = retrieveFromSession(normalizedPhoneNumber, "awaitingSearchTerm");
@@ -318,6 +336,9 @@ public class ussdcontroller {
             String currentSubMenu = (String) retrieveFromSession(normalizedPhoneNumber, "currentSubMenu");
             if ("more_info".equals(currentSubMenu)) {
                 System.out.println("User is in 'more_info' submenu");
+                return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+            } else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu)) {
+                System.out.println("User is in FFS Register/Verify submenu");
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             } else {
                 System.out.println("User is in main org menu");
@@ -343,6 +364,10 @@ public class ussdcontroller {
             String currentFlow = (String) retrieveFromSession(phone, "currentFlow");
             if (currentFlow != null && (currentFlow.equals("fhis_enrollment") || currentFlow.equals("formal_fhis_enrollment"))) {
                 return "CON You have an ongoing enrollment.\n1. Continue\n2. Start Fresh\n0. Exit";
+            }
+            String ffsRegFlow = (String) retrieveFromSession(phone, "ffsRegFlow");
+            if (ffsRegFlow != null) {
+                return "CON You have an ongoing FFS registration.\n1. Continue\n2. Start Fresh\n0. Exit";
             }
             
             // 🔥 CRITICAL FIX: Save a session marker to indicate we've shown the menu
@@ -495,6 +520,10 @@ public class ussdcontroller {
     }
 
     private String HandleLevel3(String choice, String phone, String[] parts) {
+        String currentSubMenu = (String) retrieveFromSession(phone, "currentSubMenu");
+        if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu)) {
+            return handleLevel4(choice, phone, parts);
+        }
     // Check if we're coming from "1. Search Organizations"
         if (parts[0].equals("1") && parts.length == 2) {
             // This is the search query after selecting "1"
@@ -609,8 +638,20 @@ public class ussdcontroller {
 
     private String handleOrganizationMenu(String choice, Organization org, String phone) {
         switch (choice) {
+
             case "1": // Register/Verify
-                return showMoreOptions(org, phone); // reuses your FHIS enrollment flow
+                if (org.getName().toUpperCase().contains("FHIS") || org.getName().toUpperCase().contains("FCT HEALTH") || org.getName().toUpperCase().contains("FCT HEALTH INSURANCE")) {
+                    return showMoreOptions(org, phone);
+                } else if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                    saveToSession(phone, "currentSubMenu", "register_verify");
+                    return "CON Register / Verify\n\n" +
+                        "1. Register\n" +
+                        "2. Verify\n" +
+                        "0. Back";
+                    } else {
+                    return "CON Register/Verify:\nThis service is coming soon.\n\n0. Back";
+                }
+                   
                 
             case "2": // Request
                 return "CON Request:\nThis service is coming soon.\n\n0. Back";
@@ -668,8 +709,20 @@ public class ussdcontroller {
         String currentSubMenu = (String) retrieveFromSession(phone, "currentSubMenu");
         System.out.println("HandleLevel4 - currentSubMenu: " + currentSubMenu + ", choice: " + choice);
         
+        // FFS Register/Verify submenu
+        if ("register_verify".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleFFSRegisterVerifyMenu(choice, phone);
+        }
+
+        // FFS Verification flow
+        if ("verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu)) {
+            return handleVerificationFlow(phone, choice);
+        }
+        
+        // EXISTING: FHIS More Info
         if (currentSubMenu != null && currentSubMenu.equals("more_info")) {
-            saveToSession(phone, "currentSubMenu", null); // Clear immediately
+            saveToSession(phone, "currentSubMenu", null);
             
             String orgName = org.getName().toUpperCase();
             if (!(orgName.contains("FHIS") || orgName.contains("FCT HEALTH") || orgName.contains("FCT HEALTH INSURANCE"))) {
@@ -696,6 +749,7 @@ public class ussdcontroller {
                     System.out.println("User selected '0' to return to main org menu from More Info");
                     clearNavigationSession(phone);
                     saveToSession(phone, "menuShow", true);
+                    return HandleLevel1(phone, new String[0], false);
                 default:
                     return "END Invalid choice for More Info menu.";
             }
@@ -2547,5 +2601,234 @@ public class ussdcontroller {
             default: return "the required information";
         }
     }
- 
+
+    // start of ffs handling
+    private String handleFFSRegisterVerifyMenu(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return showRegisterSubMenu(phone);
+            case "2":
+                return showVerifySubMenu(phone);
+            case "0":
+                clearNavigationSession(phone);
+                return HandleLevel1(phone, new String[0], false);
+            default:
+                return "CON Invalid choice.\n\n1. Register\n2. Verify\n0. Back";
+        }
+    }
+    private String showRegisterSubMenu(String phone) {
+        saveToSession(phone, "ffsRegFlow", "register_menu");
+        return "CON REGISTER\n\n" +
+            "1. Fire Safety Training\n" +
+            "2. Volunteer Programme\n" +
+            "3. Community Fire Marshal\n" +
+            "4. School Fire Safety\n" +
+            "5. Public Awareness Campaign\n" +
+            "0. Back";
+    }
+    
+
+    private String showVerifySubMenu(String phone) {
+        saveToSession(phone, "currentSubMenu", "verify_menu");
+        return "CON VERIFY\n\n" +
+            "1. Fire Certificate\n" +
+            "2. Fire Clearance\n" +
+            "3. Inspection Status\n" +
+            "4. Facility Compliance\n" +
+            "5. Training Certificate\n" +
+            "0. Back";
+    }
+    private String handleRegistrationFlow(String phone, String choice) {
+        String regFlow = (String) retrieveFromSession(phone, "ffsRegFlow");
+        
+        if ("register_menu".equals(regFlow)) {
+            // User is selecting registration type
+            return handleRegistrationTypeSelection(phone, choice);
+        }
+        
+        if ("register_form".equals(regFlow)) {
+            // User is filling the form
+            return handleRegistrationForm(phone, choice);
+        }
+        
+        return "END Invalid registration state.";
+    }
+    private String handleRegistrationTypeSelection(String phone, String choice) {
+        String regType;
+        switch (choice) {
+            case "1": regType = "TRAINING"; break;
+            case "2": regType = "VOLUNTEER"; break;
+            case "3": regType = "MARSHAL"; break;
+            case "4": regType = "SCHOOL"; break;
+            case "5": regType = "AWARENESS"; break;
+            case "0":
+                saveToSession(phone, "ffsRegFlow", null);
+                return showFFSOrgMenu(phone); // Go back to FFS menu
+            default:
+                return "CON Invalid choice.\n\n" + showRegisterSubMenu(phone).substring(4);
+        }
+        
+        saveToSession(phone, "ffsRegFlow", "register_form");
+        saveToSession(phone, "ffsRegType", regType);
+        saveToSession(phone, "ffsRegField", "name");
+        
+        return "CON " + getRegistrationTypeDisplay(regType) + "\n\nEnter Full Name:";
+    }
+    private String handleRegistrationForm(String phone, String input) {
+        String currentField = (String) retrieveFromSession(phone, "ffsRegField");
+        String regType = (String) retrieveFromSession(phone, "ffsRegType");
+        
+        if (input == null || input.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
+        }
+        
+        // Save current field
+        switch (currentField) {
+            case "name":
+                saveToSession(phone, "ffsRegName", input.trim());
+                saveToSession(phone, "ffsRegField", "address");
+                return "CON Enter Address:";
+                
+            case "address":
+                saveToSession(phone, "ffsRegAddress", input.trim());
+                saveToSession(phone, "ffsRegField", "state");
+                return "CON Enter State:";
+                
+            case "state":
+                saveToSession(phone, "ffsRegState", input.trim());
+                saveToSession(phone, "ffsRegField", "occupation");
+                return "CON Enter Occupation:";
+                
+            case "occupation":
+                saveToSession(phone, "ffsRegOccupation", input.trim());
+                saveToSession(phone, "ffsRegField", "organization");
+                return "CON Enter Organization (Optional):\n(Enter 0 to skip)";
+                
+            case "organization":
+                String org = input.trim();
+                if ("0".equals(org)) org = null;
+                saveToSession(phone, "ffsRegOrg", org);
+                
+                // All fields collected — save to database
+                return saveRegistration(phone, regType);
+                
+            default:
+                return "END Invalid form state.";
+        }
+        
+    }
+    private String saveRegistration(String phone, String regType) {
+        try {
+            FfsRegistration reg = new FfsRegistration();
+            reg.setPhoneNumber(phone);
+            reg.setRegistrationType(regType);
+            reg.setReferenceId(generateReferenceId("REG"));
+            reg.setFullName((String) retrieveFromSession(phone, "ffsRegName"));
+            reg.setAddress((String) retrieveFromSession(phone, "ffsRegAddress"));
+            reg.setState((String) retrieveFromSession(phone, "ffsRegState"));
+            reg.setOccupation((String) retrieveFromSession(phone, "ffsRegOccupation"));
+            reg.setOrganization((String) retrieveFromSession(phone, "ffsRegOrg"));
+            reg.setCreatedAt(LocalDateTime.now());
+            
+            ffsRegistrationRepository.save(reg);
+            
+            // Clear registration session
+            clearRegistrationSession(phone);
+            
+            return "END Registration completed!\n\n" +
+                "Ref: " + reg.getReferenceId() + "\n" +
+                "You will receive SMS confirmation shortly.";
+                
+        } catch (Exception e) {
+            System.err.println("Error saving registration: " + e.getMessage());
+            return "END Error saving registration. Please try again.";
+        }
+    }
+    // ==================== VERIFICATION FLOW (Static for now) ====================
+
+    private String handleVerificationFlow(String phone, String choice) {
+        String verifyMenu = (String) retrieveFromSession(phone, "currentSubMenu");
+        
+        if ("verify_menu".equals(verifyMenu)) {
+            // User selected a verification type
+            switch (choice) {
+                case "1": case "2": case "3": case "4": case "5":
+                    saveToSession(phone, "currentSubMenu", "verify_form");
+                    saveToSession(phone, "verifyType", choice);
+                    return "CON Enter Certificate/Registration Number:";
+                case "0":
+                    saveToSession(phone, "currentSubMenu", null);
+                    return showFFSOrgMenu(phone);
+                default:
+                    return "CON Invalid choice.\n\n" + showVerifySubMenu(phone).substring(4);
+            }
+        }
+        
+        if ("verify_form".equals(verifyMenu)) {
+            // Mock verification — in production, query actual DB
+            String verifyType = (String) retrieveFromSession(phone, "verifyType");
+            String certNumber = choice.trim();
+            
+            // Clear verification state
+            saveToSession(phone, "currentSubMenu", null);
+            saveToSession(phone, "verifyType", null);
+            
+            // Mock response — 50% chance verified for demo
+            boolean isVerified = certNumber.length() >= 5;
+            
+            if (isVerified) {
+                return "END Verification Status: VERIFIED\n\n" +
+                    "Certificate No: " + certNumber.toUpperCase() + "\n" +
+                    "Status: Active\n" +
+                    "Expiry: 31-12-2026";
+            } else {
+                return "END Verification Status: NOT FOUND\n\n" +
+                    "Certificate No: " + certNumber + "\n" +
+                    "No record found. Please contact FFS.";
+            }
+        }
+        
+        return "END Invalid verification state.";
+    }
+    // ==================== HELPERS ====================
+
+    private String showFFSOrgMenu(String phone) {
+        Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
+        if (selectedOrgId != null) {
+            Optional<Organization> orgOpt = organizationRepository.findById(selectedOrgId);
+            if (orgOpt.isPresent()) {
+                return showorgmenu(orgOpt.get());
+            }
+        }
+        // Fallback to main menu
+        clearNavigationSession(phone);
+        return HandleLevel1(phone, new String[0], false);
+    }
+
+    private String getRegistrationTypeDisplay(String type) {
+        switch (type) {
+            case "TRAINING": return "Fire Safety Training";
+            case "VOLUNTEER": return "Volunteer Programme";
+            case "MARSHAL": return "Community Fire Marshal";
+            case "SCHOOL": return "School Fire Safety";
+            case "AWARENESS": return "Public Awareness Campaign";
+            default: return "Registration";
+        }
+    }
+    private String generateReferenceId(String prefix) {
+        int random = (int) (Math.random() * 9000) + 1000;
+        return "FFS-" + prefix + "-" + random;
+    }
+    
+
+    private void clearRegistrationSession(String phone) {
+        saveToSession(phone, "ffsRegFlow", null);
+        saveToSession(phone, "ffsRegType", null);
+        saveToSession(phone, "ffsRegField", null);
+        saveToSession(phone, "ffsRegName", null);
+        saveToSession(phone, "ffsRegAddress", null);
+        saveToSession(phone, "ffsRegState", null);
+        saveToSession(phone, "ffsRegOccupation", null);
+        saveToSession(phone, "ffsRegOrg", null);
+    }
 }
