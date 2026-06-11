@@ -337,18 +337,14 @@ public class ussdcontroller {
             if ("more_info".equals(currentSubMenu)) {
                 System.out.println("User is in 'more_info' submenu");
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
-            } else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu)) {
-                System.out.println("User is in FFS Register/Verify submenu");
-                return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
-            
-            } else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu) || "request_service".equals(currentSubMenu)) {
+            } else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu) || "request_service".equals(currentSubMenu) || "report_incident".equals(currentSubMenu)) {
                 System.out.println("User is in FFS submenu");
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             } else {
                 System.out.println("User is in main org menu");
                 return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             }
-        } 
+        }
 
         // Check if we have search results (user is selecting from list)
         List<Long> orgIds = getOrgIdsFromSession(normalizedPhoneNumber);
@@ -674,7 +670,20 @@ public class ussdcontroller {
             }
                 
             case "3": // Report
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                saveToSession(phone, "currentSubMenu", "report_incident");
+                return "CON Report Incident\n\n" +
+                    "1. Fire Outbreak\n" +
+                    "2. Gas Explosion\n" +
+                    "3. Electrical Fire\n" +
+                    "4. Bush Fire\n" +
+                    "5. Building Collapse\n" +
+                    "6. Hazardous Materials Incident\n" +
+                    "7. False Alarm Report\n" +
+                    "0. Back";
+            } else {
                 return "CON Report:\nThis service is coming soon.\n\n0. Back";
+            }
                 
             case "4": // Guidelines & Procedures
                 return "CON Guidelines & Procedures:\nNot available at this time.\n\n0. Back";
@@ -734,6 +743,10 @@ public class ussdcontroller {
         if ("request_service".equals(currentSubMenu)) {
             saveToSession(phone, "currentSubMenu", null);
             return handleFFSRequestService(choice, phone);
+        }
+        if ("report_incident".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleFFSReportIncident(choice, phone);
         }
 
         // FFS Verification flow
@@ -2900,6 +2913,61 @@ public class ussdcontroller {
                     "5. Fire Truck Demonstration\n" +
                     "6. Emergency Preparedness Consultation\n" +
                     "7. Callback Request\n" +
+                    "0. Back";
+        }
+    }
+    private String handleFFSReportIncident(String choice, String phone) {
+        String refId = "FFS-RPT-" + ((int) (Math.random() * 9000) + 1000);
+        
+        switch (choice) {
+            case "1":
+                return "END FIRE OUTBREAK REPORTED\n\n" +
+                    "Reference: " + refId + "\n" +
+                    "Nearest fire station notified.\n" +
+                    "Stay calm. Help is on the way.";
+            case "2":
+                return "END GAS EXPLOSION REPORTED\n\n" +
+                    "Reference: " + refId + "\n" +
+                    "Evacuate immediately.\n" +
+                    "Do not use electrical switches.\n" +
+                    "Emergency team dispatched.";
+            case "3":
+                return "END ELECTRICAL FIRE REPORTED\n\n" +
+                    "Reference: " + refId + "\n" +
+                    "Turn off power if safe.\n" +
+                    "Do not use water.\n" +
+                    "Use CO2 extinguisher only.";
+            case "4":
+                return "END BUSH FIRE REPORTED\n\n" +
+                    "Reference: " + refId + "\n" +
+                    "Move away from fire path.\n" +
+                    "Rangers and fire service notified.";
+            case "5":
+                return "END BUILDING COLLAPSE REPORTED\n\n" +
+                    "Reference: " + refId + "\n" +
+                    "Rescue team mobilized.\n" +
+                    "Clear the area for emergency access.";
+            case "6":
+                return "END HAZARDOUS MATERIALS INCIDENT\n\n" +
+                    "Reference: " + refId + "\n" +
+                    "Hazmat team alerted.\n" +
+                    "Avoid contact. Evacuate area.";
+            case "7":
+                return "END FALSE ALARM REPORTED\n\n" +
+                    "Reference: " + refId + "\n" +
+                    "Thank you for the update.\n" +
+                    "Please avoid false reports.";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n" +
+                    "1. Fire Outbreak\n" +
+                    "2. Gas Explosion\n" +
+                    "3. Electrical Fire\n" +
+                    "4. Bush Fire\n" +
+                    "5. Building Collapse\n" +
+                    "6. Hazardous Materials Incident\n" +
+                    "7. False Alarm Report\n" +
                     "0. Back";
         }
     }
