@@ -337,7 +337,7 @@ public class ussdcontroller {
             if ("more_info".equals(currentSubMenu)) {
                 System.out.println("User is in 'more_info' submenu");
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
-            } else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu) || "request_service".equals(currentSubMenu) || "report_incident".equals(currentSubMenu)) {
+            }else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu) || "request_service".equals(currentSubMenu) || "report_incident".equals(currentSubMenu) || "guidelines".equals(currentSubMenu) || "faqs".equals(currentSubMenu) || "alerts".equals(currentSubMenu) || "more_info_ffs".equals(currentSubMenu) || "account_profile".equals(currentSubMenu)) {
                 System.out.println("User is in FFS submenu");
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             } else {
@@ -671,42 +671,125 @@ public class ussdcontroller {
                 
             case "3": // Report
                 if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
-                saveToSession(phone, "currentSubMenu", "report_incident");
-                return "CON Report Incident\n\n" +
-                    "1. Fire Outbreak\n" +
-                    "2. Gas Explosion\n" +
-                    "3. Electrical Fire\n" +
-                    "4. Bush Fire\n" +
-                    "5. Building Collapse\n" +
-                    "6. Hazardous Materials Incident\n" +
-                    "7. False Alarm Report\n" +
-                    "0. Back";
-            } else {
-                return "CON Report:\nThis service is coming soon.\n\n0. Back";
-            }
+                    saveToSession(phone, "currentSubMenu", "report_incident");
+                    return "CON Report Incident\n\n" +
+                        "1. Fire Outbreak\n" +
+                        "2. Gas Explosion\n" +
+                        "3. Electrical Fire\n" +
+                        "4. Bush Fire\n" +
+                        "5. Building Collapse\n" +
+                        "6. Hazardous Materials Incident\n" +
+                        "7. False Alarm Report\n" +
+                        "0. Back";
+                } else {
+                    return "CON Report:\nThis service is coming soon.\n\n0. Back";
+                }
                 
             case "4": // Guidelines & Procedures
-                return "CON Guidelines & Procedures:\nNot available at this time.\n\n0. Back";
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                    saveToSession(phone, "currentSubMenu", "guidelines");
+                    return "CON Fire Safety Guidelines\n\n" +
+                        "1. Home Fire Safety\n" +
+                        "2. Office Fire Safety\n" +
+                        "3. School Fire Safety\n" +
+                        "4. Market Fire Prevention\n" +
+                        "5. Fuel and Gas Safety\n" +
+                        "6. Emergency Evacuation Procedures\n" +
+                        "0. Back";
+                } else {
+                    return "CON Guidelines & Procedures:\nNot available at this time.\n\n0. Back";
+                }
                 
             case "5": // FAQs/Links
-                return "CON FAQs/Links:\nNot available at this time.\n\n0. Back";
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                    saveToSession(phone, "currentSubMenu", "faqs");
+                    return "CON FAQs\n\n" +
+                        "1. How to obtain a Fire Certificate\n" +
+                        "2. How to request inspection\n" +
+                        "3. Fire safety requirements\n" +
+                        "4. Emergency response procedures\n" +
+                        "5. Contact information\n" +
+                        "0. Back";
+                } else {
+                    return "CON FAQs/Links:\nNot available at this time.\n\n0. Back";
+                }
                 
             case "6": // Call Lines
-                return "CON Call Lines:\n" + 
-                        (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
-                        "\n\n0. Back";
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                    return "END Emergency Call Lines\n\n" +
+                        "National Emergency: 112\n" +
+                        "Federal Fire Service: 0703-590-4570\n" +
+                        "Rescue Support: 0803-200-1234\n\n" +
+                        "State Fire Service:\n" +
+                        "Contact your state command.\n\n" +
+                        "Dial 112 for all emergencies.";
+                } else {
+                    return "CON Call Lines:\n" + 
+                            (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
+                            "\n\n0. Back";
+                }
                 
             case "7": // Tips/Updates
-                return "CON Tips/Updates:\nNo updates at this time.\n\n0. Back";
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                    saveToSession(phone, "currentSubMenu", "alerts");
+                    return "CON Alerts & Updates\n\n" +
+                        "1. Fire Safety Tips\n" +
+                        "2. Seasonal Fire Warnings\n" +
+                        "3. Harmattan Fire Advisories\n" +
+                        "4. Flood and Disaster Alerts\n" +
+                        "5. Public Safety Announcements\n" +
+                        "6. Emergency Preparedness Campaigns\n" +
+                        "0. Back";
+                } else {
+                    return "CON Tips/Updates:\nNo updates at this time.\n\n0. Back";
+                }
                 
             case "8": // About Organization
-                return "CON About " + org.getName() + ":\n" +
-                        (org.getDescription() != null ? org.getDescription() : "Not available") +
-                        "\n\nAddress: " + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") +
-                        "\n\n0. Back";
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                    return "END About Federal Fire Service\n\n" +
+                        "Mandate:\n" +
+                        "To prevent and fight fires, " +
+                        "protect life and property.\n\n" +
+                        "Responsibilities:\n" +
+                        "- Fire prevention education\n" +
+                        "- Emergency response\n" +
+                        "- Rescue operations\n" +
+                        "- Fire safety inspections\n\n" +
+                        "Contact: 0703-590-4570";
+                } else {
+                    return "CON About " + org.getName() + ":\n" +
+                            (org.getDescription() != null ? org.getDescription() : "Not available") +
+                            "\n\nAddress: " + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") +
+                            "\n\n0. Back";
+                }
                 
             case "9": // More Info
-                return showMoreOptions(org, phone);
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                    saveToSession(phone, "currentSubMenu", "more_info_ffs");
+                    return "CON More Information\n\n" +
+                        "1. Service Locations\n" +
+                        "2. State Commands\n" +
+                        "3. Office Addresses\n" +
+                        "4. Approved Fire Safety Consultants\n" +
+                        "5. Office Hours\n" +
+                        "0. Back";
+                } else {
+                    return showMoreOptions(org, phone);
+                }
+            
+            case "10": // Account / Profile
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                    saveToSession(phone, "currentSubMenu", "account_profile");
+                    return "CON Account / Profile\n\n" +
+                        "1. Update Profile\n" +
+                        "2. Change PIN\n" +
+                        "3. Notification Preferences\n" +
+                        "4. View Recent Requests\n" +
+                        "5. Account Recovery\n" +
+                        "0. Back";
+                } else {
+                    return "CON Account:\nNot available for this organization.\n\n0. Back";
+                }
                 
             case "0": // Main Menu
                 clearNavigationSession(phone);
@@ -752,6 +835,26 @@ public class ussdcontroller {
         // FFS Verification flow
         if ("verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu)) {
             return handleVerificationFlow(phone, choice);
+        }
+        if ("guidelines".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleFFSGuidelines(choice, phone);
+        }
+        if ("faqs".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleFFSFAQs(choice, phone);
+        }
+        if ("alerts".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleFFSAlerts(choice, phone);
+        }
+        if ("more_info_ffs".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleFFSMoreInfo(choice, phone);
+        }
+        if ("account_profile".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleFFSAccountProfile(choice, phone);
         }
         
         // EXISTING: FHIS More Info
@@ -2968,6 +3071,253 @@ public class ussdcontroller {
                     "5. Building Collapse\n" +
                     "6. Hazardous Materials Incident\n" +
                     "7. False Alarm Report\n" +
+                    "0. Back";
+        }
+    }
+    private String handleFFSGuidelines(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END HOME FIRE SAFETY\n\n" +
+                    "- Install smoke alarms\n" +
+                    "- Keep fire extinguishers handy\n" +
+                    "- Never leave cooking unattended\n" +
+                    "- Plan escape routes\n" +
+                    "- Check electrical wiring regularly";
+            case "2":
+                return "END OFFICE FIRE SAFETY\n\n" +
+                    "- Know fire exits\n" +
+                    "- No overloaded sockets\n" +
+                    "- Store chemicals safely\n" +
+                    "- Conduct fire drills\n" +
+                    "- Maintain fire extinguishers";
+            case "3":
+                return "END SCHOOL FIRE SAFETY\n\n" +
+                    "- Clear exit paths\n" +
+                    "- Train staff and students\n" +
+                    "- Regular fire drills\n" +
+                    "- Safe storage of lab chemicals\n" +
+                    "- Report faulty wiring";
+            case "4":
+                return "END MARKET FIRE PREVENTION\n\n" +
+                    "- No open flames near stalls\n" +
+                    "- Proper waste disposal\n" +
+                    "- Accessible fire exits\n" +
+                    "- Ban illegal electrical connections\n" +
+                    "- Install fire alarms";
+            case "5":
+                return "END FUEL AND GAS SAFETY\n\n" +
+                    "- Store fuel away from heat\n" +
+                    "- Check gas cylinders for leaks\n" +
+                    "- Never smoke near fuel\n" +
+                    "- Use approved containers\n" +
+                    "- Report gas leaks immediately";
+            case "6":
+                return "END EMERGENCY EVACUATION\n\n" +
+                    "- Stay calm\n" +
+                    "- Use stairs, not elevators\n" +
+                    "- Help children and elderly\n" +
+                    "- Go to assembly point\n" +
+                    "- Do not re-enter building";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n" +
+                    "1. Home Fire Safety\n" +
+                    "2. Office Fire Safety\n" +
+                    "3. School Fire Safety\n" +
+                    "4. Market Fire Prevention\n" +
+                    "5. Fuel and Gas Safety\n" +
+                    "6. Emergency Evacuation Procedures\n" +
+                    "0. Back";
+        }
+    }
+    private String handleFFSFAQs(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END HOW TO OBTAIN A FIRE CERTIFICATE\n\n" +
+                    "1. Apply online or visit FFS office\n" +
+                    "2. Submit building plans\n" +
+                    "3. Schedule inspection\n" +
+                    "4. Pay required fees\n" +
+                    "5. Certificate issued after compliance";
+            case "2":
+                return "END HOW TO REQUEST INSPECTION\n\n" +
+                    "Dial *7447#\n" +
+                    "Select Federal Fire Service\n" +
+                    "Choose Request Service\n" +
+                    "Select Fire Safety Inspection\n" +
+                    "Fill required details";
+            case "3":
+                return "END FIRE SAFETY REQUIREMENTS\n\n" +
+                    "- Fire extinguishers\n" +
+                    "- Smoke detectors\n" +
+                    "- Emergency exits\n" +
+                    "- Fire alarm systems\n" +
+                    "- Trained fire wardens";
+            case "4":
+                return "END EMERGENCY RESPONSE PROCEDURES\n\n" +
+                    "1. Raise alarm\n" +
+                    "2. Call 112 or FFS hotline\n" +
+                    "3. Evacuate calmly\n" +
+                    "4. Use extinguisher if safe\n" +
+                    "5. Wait for emergency services";
+            case "5":
+                return "END CONTACT INFORMATION\n\n" +
+                    "Federal Fire Service HQ:\n" +
+                    "Abuja, Nigeria\n\n" +
+                    "Hotline: 0703-590-4570\n" +
+                    "Email: info@federal.gov.ng\n" +
+                    "Website: www.federal.gov.ng";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n" +
+                    "1. How to obtain a Fire Certificate\n" +
+                    "2. How to request inspection\n" +
+                    "3. Fire safety requirements\n" +
+                    "4. Emergency response procedures\n" +
+                    "5. Contact information\n" +
+                    "0. Back";
+        }
+    }
+    private String handleFFSAlerts(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END FIRE SAFETY TIPS\n\n" +
+                    "Tip of the week:\n" +
+                    "Always check your electrical " +
+                    "appliances before leaving home.\n" +
+                    "Unplug devices not in use.";
+            case "2":
+                return "END SEASONAL FIRE WARNINGS\n\n" +
+                    "Current Season: Harmattan\n" +
+                    "Risk Level: HIGH\n\n" +
+                    "Avoid bush burning.\n" +
+                    "Keep water sources accessible.\n" +
+                    "Report smoke sightings immediately.";
+            case "3":
+                return "END HARMATTAN FIRE ADVISORIES\n\n" +
+                    "Dry season precautions:\n" +
+                    "- Clear dry vegetation\n" +
+                    "- No open burning\n" +
+                    "- Store flammables safely\n" +
+                    "- Keep fire service contacts handy";
+            case "4":
+                return "END FLOOD AND DISASTER ALERTS\n\n" +
+                    "No active flood warnings.\n\n" +
+                    "For updates dial *7447#\n" +
+                    "Select Alerts & Updates.";
+            case "5":
+                return "END PUBLIC SAFETY ANNOUNCEMENTS\n\n" +
+                    "All markets must install\n" +
+                    "fire extinguishers by Dec 2026.\n\n" +
+                    "Compliance inspections begin Jan 2027.";
+            case "6":
+                return "END EMERGENCY PREPAREDNESS\n\n" +
+                    "Join our community training:\n" +
+                    "Every first Saturday.\n\n" +
+                    "Dial *7447# → Register →\n" +
+                    "Fire Safety Training to sign up.";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n" +
+                    "1. Fire Safety Tips\n" +
+                    "2. Seasonal Fire Warnings\n" +
+                    "3. Harmattan Fire Advisories\n" +
+                    "4. Flood and Disaster Alerts\n" +
+                    "5. Public Safety Announcements\n" +
+                    "6. Emergency Preparedness Campaigns\n" +
+                    "0. Back";
+        }
+    }
+    private String handleFFSMoreInfo(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END SERVICE LOCATIONS\n\n" +
+                    "Federal Fire Service operates\n" +
+                    "in all 36 states + FCT.\n\n" +
+                    "Major stations:\n" +
+                    "- Abuja (HQ)\n" +
+                    "- Lagos\n" +
+                    "- Kano\n" +
+                    "- Port Harcourt\n" +
+                    "- Enugu";
+            case "2":
+                return "END STATE COMMANDS\n\n" +
+                    "Each state has a Commanding Officer.\n\n" +
+                    "Contact your state fire service\n" +
+                    "for local emergencies.\n\n" +
+                    "Dial *7447# → Call Lines\n" +
+                    "for state contacts.";
+            case "3":
+                return "END OFFICE ADDRESSES\n\n" +
+                    "Headquarters:\n" +
+                    "Federal Fire Service\n" +
+                    "Mabushi, Abuja\n\n" +
+                    "Regional offices in\n" +
+                    "all geopolitical zones.";
+            case "4":
+                return "END APPROVED CONSULTANTS\n\n" +
+                    "List of approved fire safety\n" +
+                    "consultants available at FFS HQ.\n\n" +
+                    "Apply for accreditation:\n" +
+                    "consultants@federal.gov.ng";
+            case "5":
+                return "END OFFICE HOURS\n\n" +
+                    "Monday - Friday: 8am - 4pm\n" +
+                    "Emergency: 24/7\n\n" +
+                    "Call 112 anytime.\n" +
+                    "Visit www.federal.gov.ng";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n" +
+                    "1. Service Locations\n" +
+                    "2. State Commands\n" +
+                    "3. Office Addresses\n" +
+                    "4. Approved Fire Safety Consultants\n" +
+                    "5. Office Hours\n" +
+                    "0. Back";
+        }
+    }
+    private String handleFFSAccountProfile(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END UPDATE PROFILE\n\n" +
+                    "Profile update coming soon.\n" +
+                    "Visit FFS office with ID.\n\n" +
+                    "Ref: FFS-ACC-UPD-" + ((int) (Math.random() * 9000) + 1000);
+            case "2":
+                return "END CHANGE PIN\n\n" +
+                    "PIN change not available on USSD.\n\n" +
+                    "Use web portal or visit office.";
+            case "3":
+                return "END NOTIFICATION PREFERENCES\n\n" +
+                    "You will receive:\n" +
+                    "- Fire alerts: YES\n" +
+                    "- Safety tips: YES\n" +
+                    "- Seasonal warnings: YES\n\n" +
+                    "To change: visit FFS office.";
+            case "4":
+                return "END VIEW RECENT REQUESTS\n\n" +
+                    "No recent requests found.\n\n" +
+                    "Make a request via *7447# →\n" +
+                    "Federal Fire Service → Request Service.";
+            case "5":
+                return "END ACCOUNT RECOVERY\n\n" +
+                    "Contact FFS support:\n" +
+                    "0703-590-4570\n\n" +
+                    "Provide phone number and ID.";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n" +
+                    "1. Update Profile\n" +
+                    "2. Change PIN\n" +
+                    "3. Notification Preferences\n" +
+                    "4. View Recent Requests\n" +
+                    "5. Account Recovery\n" +
                     "0. Back";
         }
     }
