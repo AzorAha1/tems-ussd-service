@@ -340,6 +340,10 @@ public class ussdcontroller {
             } else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu)) {
                 System.out.println("User is in FFS Register/Verify submenu");
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
+            
+            } else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu) || "request_service".equals(currentSubMenu)) {
+                System.out.println("User is in FFS submenu");
+                return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             } else {
                 System.out.println("User is in main org menu");
                 return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
@@ -654,7 +658,20 @@ public class ussdcontroller {
                    
                 
             case "2": // Request
+                if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
+                saveToSession(phone, "currentSubMenu", "request_service");
+                return "CON Request Service\n\n" +
+                    "1. Fire Safety Inspection\n" +
+                    "2. Facility Assessment\n" +
+                    "3. Fire Safety Training\n" +
+                    "4. Public Awareness Visit\n" +
+                    "5. Fire Truck Demonstration\n" +
+                    "6. Emergency Preparedness Consultation\n" +
+                    "7. Callback Request\n" +
+                    "0. Back";
+            } else {
                 return "CON Request:\nThis service is coming soon.\n\n0. Back";
+            }
                 
             case "3": // Report
                 return "CON Report:\nThis service is coming soon.\n\n0. Back";
@@ -713,6 +730,10 @@ public class ussdcontroller {
         if ("register_verify".equals(currentSubMenu)) {
             saveToSession(phone, "currentSubMenu", null);
             return handleFFSRegisterVerifyMenu(choice, phone);
+        }
+        if ("request_service".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleFFSRequestService(choice, phone);
         }
 
         // FFS Verification flow
@@ -2831,4 +2852,56 @@ public class ussdcontroller {
         saveToSession(phone, "ffsRegOccupation", null);
         saveToSession(phone, "ffsRegOrg", null);
     }
+    private String handleFFSRequestService(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "CON Fire Safety Inspection\n\n" +
+                    "Request received.\n" +
+                    "Ref: FFS-REQ-" + generateReferenceId("REQ").substring(8) + "\n" +
+                    "Our team will contact you.\n\n0. Back";
+            case "2":
+                return "CON Facility Assessment\n\n" +
+                    "Request received.\n" +
+                    "Ref: FFS-REQ-" + generateReferenceId("REQ").substring(8) + "\n" +
+                    "Our team will contact you.\n\n0. Back";
+            case "3":
+                return "CON Fire Safety Training\n\n" +
+                    "Request received.\n" +
+                    "Ref: FFS-REQ-" + generateReferenceId("REQ").substring(8) + "\n" +
+                    "Our team will contact you.\n\n0. Back";
+            case "4":
+                return "CON Public Awareness Visit\n\n" +
+                    "Request received.\n" +
+                    "Ref: FFS-REQ-" + generateReferenceId("REQ").substring(8) + "\n" +
+                    "Our team will contact you.\n\n0. Back";
+            case "5":
+                return "CON Fire Truck Demonstration\n\n" +
+                    "Request received.\n" +
+                    "Ref: FFS-REQ-" + generateReferenceId("REQ").substring(8) + "\n" +
+                    "Our team will contact you.\n\n0. Back";
+            case "6":
+                return "CON Emergency Preparedness Consultation\n\n" +
+                    "Request received.\n" +
+                    "Ref: FFS-REQ-" + generateReferenceId("REQ").substring(8) + "\n" +
+                    "Our team will contact you.\n\n0. Back";
+            case "7":
+                return "CON Callback Request\n\n" +
+                    "Request received.\n" +
+                    "Ref: FFS-REQ-" + generateReferenceId("REQ").substring(8) + "\n" +
+                    "Our team will contact you.\n\n0. Back";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n" +
+                    "1. Fire Safety Inspection\n" +
+                    "2. Facility Assessment\n" +
+                    "3. Fire Safety Training\n" +
+                    "4. Public Awareness Visit\n" +
+                    "5. Fire Truck Demonstration\n" +
+                    "6. Emergency Preparedness Consultation\n" +
+                    "7. Callback Request\n" +
+                    "0. Back";
+        }
+    }
 }
+
