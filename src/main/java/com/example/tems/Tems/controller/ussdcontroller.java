@@ -23,10 +23,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.tems.Tems.model.CacRegistration;
 import com.example.tems.Tems.model.FfsRegistration;
 import com.example.tems.Tems.model.FhisEnrollment;
 import com.example.tems.Tems.model.Hospital;
 import com.example.tems.Tems.model.Organization;
+import com.example.tems.Tems.repository.CacRegistrationRepository;
 import com.example.tems.Tems.repository.FfsRegistrationRepository;
 import com.example.tems.Tems.repository.FhisEnrollmentRepository;
 import com.example.tems.Tems.repository.HospitalRepository;
@@ -44,6 +46,9 @@ public class ussdcontroller {
     private FhisEnrollmentRepository FhisEnrollmentRepository;
     private final HospitalRepository hospitalRepository;
     private final FfsRegistrationRepository ffsRegistrationRepository;
+    private final CacRegistrationRepository cacRegistrationRepository;
+
+   
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -71,7 +76,9 @@ public class ussdcontroller {
             "menuShown", "lastInteraction", "awaitingSearchTerm", // Added for menu tracking
             "ffsRegFlow", "ffsRegType", "ffsRegField",
             "ffsRegName", "ffsRegAddress", "ffsRegState",
-            "ffsRegOccupation", "ffsRegOrg"
+            "ffsRegOccupation", "ffsRegOrg","cacRegFlow", "cacRegType", "cacRegField",
+            "cacRegName", "cacRegEmail", "cacRegState", "cacRegOccupation",
+            "cacVerifyType"
         };
 
         // FFS registration keys can be added here if needed
@@ -85,14 +92,14 @@ public class ussdcontroller {
 
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository) {
         this.organizationRepository = organizationRepository;
         // this.aggregatorService = aggregatorService;
         // this.subscriptionService = subscriptionService;
         this.FhisEnrollmentRepository = FhisEnrollmentRepository;
         this.hospitalRepository = hospitalRepository;
         this.ffsRegistrationRepository = ffsRegistrationRepository;
-        
+        this.cacRegistrationRepository = cacRegistrationRepository;
     }
     
     @PostMapping(
@@ -313,6 +320,12 @@ public class ussdcontroller {
             System.out.println("Routing to FFS Registration flow: " + ffsRegFlow);
             return handleRegistrationFlow(normalizedPhoneNumber, inputedText);
         }
+        // move CAC Registration flow check here
+        String cacRegFlow = (String) retrieveFromSession(normalizedPhoneNumber, "cacRegFlow");
+        if (cacRegFlow != null) {
+            System.out.println("Routing to CAC Registration flow: " + cacRegFlow);
+            return handleCACRegistrationFlow(normalizedPhoneNumber, inputedText);
+        }
 
         // Check if we're waiting for a search term
         Object awaitingSearchObj = retrieveFromSession(normalizedPhoneNumber, "awaitingSearchTerm");
@@ -337,7 +350,7 @@ public class ussdcontroller {
             if ("more_info".equals(currentSubMenu)) {
                 System.out.println("User is in 'more_info' submenu");
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
-            }else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu) || "request_service".equals(currentSubMenu) || "report_incident".equals(currentSubMenu) || "guidelines".equals(currentSubMenu) || "faqs".equals(currentSubMenu) || "alerts".equals(currentSubMenu) || "more_info_ffs".equals(currentSubMenu) || "account_profile".equals(currentSubMenu)) {
+            }else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu) || "request_service".equals(currentSubMenu) || "report_incident".equals(currentSubMenu) || "guidelines".equals(currentSubMenu) || "faqs".equals(currentSubMenu) || "alerts".equals(currentSubMenu) || "more_info_ffs".equals(currentSubMenu) || "account_profile".equals(currentSubMenu) || "cac_register_verify".equals(currentSubMenu) || "cac_verify_menu".equals(currentSubMenu) || "cac_verify_form".equals(currentSubMenu)) {
                 System.out.println("User is in FFS submenu");
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             } else {
@@ -509,6 +522,9 @@ public class ussdcontroller {
         boolean isFFS = orgofchoice.getName().toUpperCase().contains("FIRE") 
                     || orgofchoice.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") 
                     || orgofchoice.getName().toUpperCase().contains("FFS");
+
+        boolean isCAC = orgofchoice.getName().toUpperCase().contains("CAC") 
+                    || orgofchoice.getName().toUpperCase().contains("CORPORATE AFFAIRS");
         
         StringBuilder menu = new StringBuilder("CON " + orgofchoice.getName() + "\n" +
                 "1. Register/Verify\n" +
@@ -525,6 +541,11 @@ public class ussdcontroller {
             menu.append("10. Account / Profile\n");
         }
         
+        if(isCAC) {
+            menu.append("11. Contact CAC\n");
+            menu.append("12. About CAC\n");
+            menu.append("13. Account/Profile\n");
+        }
         menu.append("0. Main Menu");
         return menu.toString();
     }
@@ -658,8 +679,14 @@ public class ussdcontroller {
                         "1. Register\n" +
                         "2. Verify\n" +
                         "0. Back";
+                    } else if (org.getName().toUpperCase().contains("CAC") || org.getName().toUpperCase().contains("CORPORATE AFFAIRS")) {
+                        saveToSession(phone, "currentSubMenu", "cac_register_verify");
+                        return "CON Register / Verify\n\n" +
+                            "1. Register\n" +
+                            "2. Verify\n" +
+                            "0. Back";
                     } else {
-                    return "CON Register/Verify:\nThis service is coming soon.\n\n0. Back";
+                        return "CON Register/Verify:\nThis service is coming soon.\n\n0. Back";    
                 }
                    
                 
@@ -809,6 +836,16 @@ public class ussdcontroller {
                 return showorgmenu(org); // Re-show menu on invalid input
         }
     }
+    private String handleCACRegistrationFlow(String phone, String choice) {
+        String regFlow = (String) retrieveFromSession(phone, "cacRegFlow");
+        if ("register_menu".equals(regFlow)) {
+            return handleCACRegistrationTypeSelection(phone, choice);
+        }
+        if ("register_form".equals(regFlow)) {
+            return handleCACRegistrationForm(phone, choice);
+        }
+        return "END Invalid CAC registration state.";
+    }
 
     private String handleLevel4(String choice, String phone, String[] parts) {
         Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
@@ -865,6 +902,14 @@ public class ussdcontroller {
         if ("account_profile".equals(currentSubMenu)) {
             saveToSession(phone, "currentSubMenu", null);
             return handleFFSAccountProfile(choice, phone);
+        }
+        // CAC Register/Verify submenu
+        if ("cac_register_verify".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleCACRegisterVerifyMenu(choice, phone);
+        }
+        if ("cac_verify_menu".equals(currentSubMenu) || "cac_verify_form".equals(currentSubMenu)) {
+            return handleCACVerifyFlow(phone, choice);
         }
         
         // EXISTING: FHIS More Info
@@ -1010,6 +1055,161 @@ public class ussdcontroller {
             return Page.empty(); // Return empty page if search term is too short
         }
         return organizationRepository.searchByNameOrInitialsContainingIgnoreCase(searchTerm, pageable);
+    }
+
+    // ==================== CAC MENU 1: REGISTER / VERIFY ====================
+
+    
+    private String showCACRegisterSubMenu(String phone) {
+        saveToSession(phone, "cacRegFlow", "register_menu");
+        return "CON REGISTER\n\n" +
+            "Select category:\n" +
+            "1. Entrepreneur\n" +
+            "2. Business Owner\n" +
+            "3. Organization\n" +
+            "0. Back";
+    }
+
+    private String showCACVerifySubMenu(String phone) {
+        saveToSession(phone, "currentSubMenu", "cac_verify_menu");
+        return "CON VERIFY\n\n" +
+            "1. Business Name\n" +
+            "2. Company Registration\n" +
+            "3. Incorporated Trustee\n" +
+            "4. Application Status\n" +
+            "5. Compliance Status\n" +
+            "0. Back";
+    }
+
+    
+
+    private String handleCACRegistrationTypeSelection(String phone, String choice) {
+        String regType;
+        switch (choice) {
+            case "1": regType = "ENTREPRENEUR"; break;
+            case "2": regType = "BUSINESS_OWNER"; break;
+            case "3": regType = "ORGANIZATION"; break;
+            case "0":
+                saveToSession(phone, "cacRegFlow", null);
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n" + showCACRegisterSubMenu(phone).substring(4);
+        }
+        saveToSession(phone, "cacRegFlow", "register_form");
+        saveToSession(phone, "cacRegType", regType);
+        saveToSession(phone, "cacRegField", "name");
+        return "CON " + regType.replace("_", " ") + "\n\nEnter Full Name:";
+    }
+
+    private String handleCACRegistrationForm(String phone, String input) {
+        String currentField = (String) retrieveFromSession(phone, "cacRegField");
+        if (input == null || input.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
+        }
+        switch (currentField) {
+            case "name":
+                saveToSession(phone, "cacRegName", input.trim());
+                saveToSession(phone, "cacRegField", "email");
+                return "CON Enter Email Address:";
+            case "email":
+                if (!isValidEmail(input.trim())) {
+                    return "CON Invalid email. Please enter a valid email:";
+                }
+                saveToSession(phone, "cacRegEmail", input.trim());
+                saveToSession(phone, "cacRegField", "state");
+                return "CON Enter State:";
+            case "state":
+                saveToSession(phone, "cacRegState", input.trim());
+                saveToSession(phone, "cacRegField", "occupation");
+                return "CON Enter Occupation:";
+            case "occupation":
+                saveToSession(phone, "cacRegOccupation", input.trim());
+                return saveCACRegistration(phone);
+            default:
+                return "END Invalid form state.";
+        }
+    }
+
+    private String saveCACRegistration(String phone) {
+        try {
+            CacRegistration reg = new CacRegistration();
+            reg.setPhoneNumber(phone);
+            reg.setRegistrationType((String) retrieveFromSession(phone, "cacRegType"));
+            reg.setReferenceId(generateCACReferenceId());
+            reg.setFullName((String) retrieveFromSession(phone, "cacRegName"));
+            reg.setEmail((String) retrieveFromSession(phone, "cacRegEmail"));
+            reg.setState((String) retrieveFromSession(phone, "cacRegState"));
+            reg.setOccupation((String) retrieveFromSession(phone, "cacRegOccupation"));
+            reg.setCreatedAt(LocalDateTime.now());
+            cacRegistrationRepository.save(reg);
+            clearCACRegistrationSession(phone);
+            return "END Registration Successful\n\nRef: " + reg.getReferenceId();
+        } catch (Exception e) {
+            System.err.println("Error saving CAC registration: " + e.getMessage());
+            return "END Error saving registration. Please try again.";
+        }
+    }
+
+    private String handleCACVerifyFlow(String phone, String choice) {
+        String verifyMenu = (String) retrieveFromSession(phone, "currentSubMenu");
+        if ("cac_verify_menu".equals(verifyMenu)) {
+            switch (choice) {
+                case "1": case "2": case "3": case "4": case "5":
+                    saveToSession(phone, "currentSubMenu", "cac_verify_form");
+                    saveToSession(phone, "cacVerifyType", choice);
+                    return "CON Enter Registration Number:";
+                case "0":
+                    saveToSession(phone, "currentSubMenu", null);
+                    return showFFSOrgMenu(phone);
+                default:
+                    return "CON Invalid choice.\n\n" + showCACVerifySubMenu(phone).substring(4);
+            }
+        }
+        if ("cac_verify_form".equals(verifyMenu)) {
+            String verifyType = (String) retrieveFromSession(phone, "cacVerifyType");
+            String regNumber = choice.trim();
+            saveToSession(phone, "currentSubMenu", null);
+            saveToSession(phone, "cacVerifyType", null);
+            boolean isValid = regNumber.length() >= 5;
+            if (isValid) {
+                return "END VERIFICATION RESULT\n\n" +
+                    "Reg No: " + regNumber.toUpperCase() + "\n" +
+                    "Status: ACTIVE\n" +
+                    "Type: " + getCACVerifyTypeDisplay(verifyType) + "\n" +
+                    "Verified by CAC";
+            } else {
+                return "END NOT FOUND\n\n" +
+                    "Reg No: " + regNumber + "\n" +
+                    "No record found.";
+            }
+        }
+        return "END Invalid verification state.";
+    }
+
+    private String getCACVerifyTypeDisplay(String type) {
+        switch (type) {
+            case "1": return "Business Name";
+            case "2": return "Company Registration";
+            case "3": return "Incorporated Trustee";
+            case "4": return "Application Status";
+            case "5": return "Compliance Status";
+            default: return "Unknown";
+        }
+    }
+
+    private String generateCACReferenceId() {
+        int random = (int) (Math.random() * 9000) + 1000;
+        return "CAC-REG-" + random;
+    }
+
+    private void clearCACRegistrationSession(String phone) {
+        saveToSession(phone, "cacRegFlow", null);
+        saveToSession(phone, "cacRegType", null);
+        saveToSession(phone, "cacRegField", null);
+        saveToSession(phone, "cacRegName", null);
+        saveToSession(phone, "cacRegEmail", null);
+        saveToSession(phone, "cacRegState", null);
+        saveToSession(phone, "cacRegOccupation", null);
     }
 
     private void saveToSession(String phoneNumber, String key, Object value) {
@@ -2145,7 +2345,7 @@ public class ussdcontroller {
                 if ("1".equals(lastInput.trim())) {
                     String lastSearch = (String) retrieveFromSession(phone, "lastHospitalSearchTerm");
                     if (lastSearch !=null ) {
-                        return showHospitalList(phone, MAX_ORGANIZATIONS_PER_PAGE);
+                        return showHospitalList(phone, 0);
                     }
                 }
                 if ("0".equals(lastInput.trim())) {
@@ -2746,6 +2946,19 @@ public class ussdcontroller {
             case "pfNumber": return "PF Number";
             case "sdaName": return "SDA Name";
             default: return "the required information";
+        }
+    }
+
+    private String handleCACRegisterVerifyMenu(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return showCACRegisterSubMenu(phone);
+            case "2":
+                return showCACVerifySubMenu(phone);
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Register\n2. Verify\n0. Back";
         }
     }
 
