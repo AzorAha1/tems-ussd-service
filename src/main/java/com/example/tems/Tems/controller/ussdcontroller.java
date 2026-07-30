@@ -24,11 +24,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.tems.Tems.model.CacRegistration;
+import com.example.tems.Tems.model.CbmRegistration;
 import com.example.tems.Tems.model.FfsRegistration;
 import com.example.tems.Tems.model.FhisEnrollment;
 import com.example.tems.Tems.model.Hospital;
 import com.example.tems.Tems.model.Organization;
 import com.example.tems.Tems.repository.CacRegistrationRepository;
+import com.example.tems.Tems.repository.CbmRegistrationRepository;
 import com.example.tems.Tems.repository.FfsRegistrationRepository;
 import com.example.tems.Tems.repository.FhisEnrollmentRepository;
 import com.example.tems.Tems.repository.HospitalRepository;
@@ -47,6 +49,7 @@ public class ussdcontroller {
     private final HospitalRepository hospitalRepository;
     private final FfsRegistrationRepository ffsRegistrationRepository;
     private final CacRegistrationRepository cacRegistrationRepository;
+    private final CbmRegistrationRepository cbmRegistrationRepository;
 
    
 
@@ -54,6 +57,7 @@ public class ussdcontroller {
     private RedisTemplate<String, Object> redisTemplate;
 
     // all sessions 
+    private static final Set<String> CBM_SPECIAL_NUMBERS = Set.of("07072603735");
     private static class SessionKeys {
         public static final String[] NAVIGATION_KEYS = {
             "selectedOrgId", "searchTerm", "currentPage", "totalPages", "org_ids", 
@@ -66,6 +70,7 @@ public class ussdcontroller {
             "currentFlow", "enrollmentOrgId", "currentField", "waitingForContinue",
             "existingEnrollmentFlow", "handlingExistingEnrollment", "viewingDetails"
         };
+
         
         public static final String[] ALL_KEYS = {
             "selectedOrgId", "searchTerm", "currentPage", "totalPages", "org_ids", 
@@ -78,7 +83,8 @@ public class ussdcontroller {
             "ffsRegName", "ffsRegAddress", "ffsRegState",
             "ffsRegOccupation", "ffsRegOrg","cacRegFlow", "cacRegType", "cacRegField",
             "cacRegName", "cacRegEmail", "cacRegState", "cacRegOccupation",
-            "cacVerifyType"
+            "cacVerifyType","cbmFlow", "cbmField", "cbmFirstName", "cbmLastName", "cbmEmail", 
+            "cbmVin", "cbmGender", "cbmOrgName", "cbmSupportType", "cbmSpread", "cbmReferral"
         };
 
         // FFS registration keys can be added here if needed
@@ -90,10 +96,28 @@ public class ussdcontroller {
 
     }
 
+    // check if is cbmspecial number
+    private boolean isCbmSpecialNumber(String phoneNumber) {
+        return phoneNumber != null && CBM_SPECIAL_NUMBERS.contains(phoneNumber);
+    }
+    // show cbm menu
+    private String showCBMMenu() {
+        return "CON Welcome to CITY BOY MOVEMENT\n\n" +
+            "1. Join City Boy Movement\n" +
+            "2. About City Boy\n" +
+            "3. Support Group Registration\n" +
+            "4. Achievements\n" +
+            "5. News\n" +
+            "6. Contacts\n" +
+            "7. News and Update\n" +
+            "0. Exit";
+    }
+
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository) {
         this.organizationRepository = organizationRepository;
+        this.cbmRegistrationRepository = cbmRegistrationRepository;
         // this.aggregatorService = aggregatorService;
         // this.subscriptionService = subscriptionService;
         this.FhisEnrollmentRepository = FhisEnrollmentRepository;
@@ -265,7 +289,216 @@ public class ussdcontroller {
         System.out.println("❌ Not an initial request - normalized: '" + normalizedInput + "'");
         return false;
     }
+    private String handleCBMJoinMovement(String phone, String input) {
+        String currentField = (String) retrieveFromSession(phone, "cbmField");
+        if (currentField == null) {
+            currentField = "firstName";
+            saveToSession(phone, "cbmField", currentField);
+        }
 
+        if (input == null || input.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getCbmFieldDisplayName(currentField) + ":";
+        }
+        String value = input.trim();
+
+        switch (currentField) {
+            case "firstName":
+                if (!isValidName(value)) {
+                    return "CON Invalid name. Please enter First Name:";
+                }
+                saveToSession(phone, "cbmFirstName", value);
+                saveToSession(phone, "cbmField", "lastName");
+                return "CON Enter Last Name:";
+
+            case "lastName":
+                if (!isValidName(value)) {
+                    return "CON Invalid name. Please enter Last Name:";
+                }
+                saveToSession(phone, "cbmLastName", value);
+                saveToSession(phone, "cbmField", "email");
+                return "CON Enter Email Address:";
+
+            case "email":
+                if (!isValidEmail(value)) {
+                    return "CON Invalid email. Please enter a valid Email Address:";
+                }
+                saveToSession(phone, "cbmEmail", value);
+                saveToSession(phone, "cbmField", "gender");
+                return "CON Select Gender:\n1. Male\n2. Female";
+
+            case "gender":
+                String gender;
+                switch (value) {
+                    case "1": gender = "MALE"; break;
+                    case "2": gender = "FEMALE"; break;
+                    default: return "CON Invalid choice.\n\nSelect Gender:\n1. Male\n2. Female";
+                }
+                saveToSession(phone, "cbmGender", gender);
+                saveToSession(phone, "cbmField", "vin");
+                return "CON Enter your Membership/Verification Number\n(Enter 0 if none):";
+
+            case "vin":
+                saveToSession(phone, "cbmVin", "0".equals(value) ? null : value);
+                saveToSession(phone, "cbmField", "orgName");
+                return "CON Enter your Organization/Group Name\n(Enter 0 to skip):";
+
+            case "orgName":
+                saveToSession(phone, "cbmOrgName", "0".equals(value) ? null : value);
+                saveToSession(phone, "cbmField", "supportType");
+                return "CON Select Support Type:\n1. Volunteer\n2. Donor\n3. Partner\n4. General Member";
+
+            case "supportType":
+                String support;
+                switch (value) {
+                    case "1": support = "VOLUNTEER"; break;
+                    case "2": support = "DONOR"; break;
+                    case "3": support = "PARTNER"; break;
+                    case "4": support = "GENERAL_MEMBER"; break;
+                    default: return "CON Invalid choice.\n\nSelect Support Type:\n1. Volunteer\n2. Donor\n3. Partner\n4. General Member";
+                }
+                saveToSession(phone, "cbmSupportType", support);
+                saveToSession(phone, "cbmField", "spread");
+                return "CON Enter your State/Location:";
+
+            case "spread":
+                saveToSession(phone, "cbmSpread", value);
+                saveToSession(phone, "cbmField", "referral");
+                return "CON Enter Referral Name/Code\n(Enter 0 if none):";
+
+            case "referral":
+                saveToSession(phone, "cbmReferral", "0".equals(value) ? null : value);
+                return saveCBMRegistration(phone);
+
+            default:
+                return "END Invalid form state.";
+        }
+    }
+    private String saveCBMRegistration(String phone) {
+        try {
+            CbmRegistration reg = new CbmRegistration();
+            reg.setPhoneNumber(phone);
+            reg.setReferenceId(generateCBMReferenceId());
+            reg.setFirstName((String) retrieveFromSession(phone, "cbmFirstName"));
+            reg.setLastName((String) retrieveFromSession(phone, "cbmLastName"));
+            reg.setEmail((String) retrieveFromSession(phone, "cbmEmail"));
+            reg.setVin((String) retrieveFromSession(phone, "cbmVin"));
+            reg.setGender((String) retrieveFromSession(phone, "cbmGender"));
+            reg.setOrgName((String) retrieveFromSession(phone, "cbmOrgName"));
+            reg.setSupportType((String) retrieveFromSession(phone, "cbmSupportType"));
+            reg.setSpread((String) retrieveFromSession(phone, "cbmSpread"));
+            reg.setReferral((String) retrieveFromSession(phone, "cbmReferral"));
+            reg.setCreatedAt(LocalDateTime.now());
+
+            cbmRegistrationRepository.save(reg);
+            clearCBMJoinSession(phone);
+
+            return "END Welcome to City Boy Movement!\n\nRef: " + reg.getReferenceId();
+        } catch (Exception e) {
+            System.err.println("Error saving CBM registration: " + e.getMessage());
+            return "END Error saving registration. Please try again.";
+        }
+    }
+    private String generateCBMReferenceId() {
+        int random = (int) (Math.random() * 9000) + 1000;
+        return "CBM-REG-" + random;
+    }
+    private void clearCBMJoinSession(String phone) {
+        saveToSession(phone, "cbmFlow", null);
+        saveToSession(phone, "cbmField", null);
+        saveToSession(phone, "cbmFirstName", null);
+        saveToSession(phone, "cbmLastName", null);
+        saveToSession(phone, "cbmEmail", null);
+        saveToSession(phone, "cbmVin", null);
+        saveToSession(phone, "cbmGender", null);
+        saveToSession(phone, "cbmOrgName", null);
+        saveToSession(phone, "cbmSupportType", null);
+        saveToSession(phone, "cbmSpread", null);
+        saveToSession(phone, "cbmReferral", null);
+    }
+    private String getCbmFieldDisplayName(String field) {
+        switch (field) {
+            case "firstName": return "First Name";
+            case "lastName": return "Last Name";
+            case "email": return "Email Address";
+            case "gender": return "Gender";
+            case "vin": return "Membership Number";
+            case "orgName": return "Organization Name";
+            case "supportType": return "Support Type";
+            case "spread": return "State/Location";
+            case "referral": return "Referral";
+            default: return "the required information";
+        }
+    }
+    private String handleCBMFlow(String phone, String input) {
+        String cbmFlow = (String) retrieveFromSession(phone, "cbmFlow");
+
+        if (cbmFlow == null) {
+            saveToSession(phone, "cbmFlow", "main_menu");
+            return showCBMMenu();
+        }
+
+        switch (cbmFlow) {
+            case "main_menu":
+                return handleCBMMainMenu(phone, input);
+            case "join_movement":
+                return handleCBMJoinMovement(phone, input);
+            default:
+                saveToSession(phone, "cbmFlow", null);
+                return showCBMMenu();
+        }
+    }
+
+    private String handleCBMMainMenu(String phone, String choice) {
+        switch (choice) {
+            case "1":
+                saveToSession(phone, "cbmFlow", "join_movement");
+                saveToSession(phone, "cbmField", "firstName");
+                return "CON JOIN CITY BOY MOVEMENT\n\nEnter First Name:";
+                
+            case "2":
+                saveToSession(phone, "cbmFlow", "about");
+                return "CON ABOUT CITY BOY\n\n" +
+                    "1. About CBM\n" +
+                    "2. Grand Patron\n" +
+                    "3. Director General\n" +
+                    "4. State Directors\n" +
+                    "0. Back";
+                    
+            case "3":
+                saveToSession(phone, "cbmFlow", "support_reg");
+                return "CON SUPPORT GROUP REGISTRATION\n\nComing soon.\n\n0. Back";
+                
+            case "4":
+                saveToSession(phone, "cbmFlow", "achievements");
+                return "CON ACHIEVEMENTS\n\n" +
+                    "1. Presidential Achievements\n" +
+                    "2. Ministerial Achievements\n" +
+                    "0. Back";
+                    
+            case "5":
+                saveToSession(phone, "cbmFlow", "news");
+                return "CON NEWS\n\nComing soon.\n\n0. Back";
+                
+            case "6":
+                return "END CONTACTS\n\n" +
+                    "162 Aminu Kano Crescent,\n" +
+                    "Abuja-FCT, Nigeria\n" +
+                    "080 3714 3337\n" +
+                    "081 8000 8077\n" +
+                    "info@cbmnigeria.org";
+                    
+            case "7":
+                return "END NEWS AND UPDATE\n\nCheck back later for updates.\n\nwww.cbm.com";
+                
+            case "0":
+                saveToSession(phone, "cbmFlow", null);
+                resetUserSession(phone);
+                return "END Thank you for using City Boy Movement.";
+                
+            default:
+                return showCBMMenu();
+        }
+    }
     private String processUssdRequest(String inputText, String phoneNumber) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
         if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
@@ -326,7 +559,13 @@ public class ussdcontroller {
             System.out.println("Routing to CAC Registration flow: " + cacRegFlow);
             return handleCACRegistrationFlow(normalizedPhoneNumber, inputedText);
         }
-
+        // cbm movement flow check
+        if (isCbmSpecialNumber(normalizedPhoneNumber) || retrieveFromSession(normalizedPhoneNumber, "cbmFlow") != null) {
+            System.out.println("Routing to CBM Movement flow");
+            return handleCBMFlow(normalizedPhoneNumber, inputedText);
+        }
+        // handle cbm flow 
+        
         // Check if we're waiting for a search term
         Object awaitingSearchObj = retrieveFromSession(normalizedPhoneNumber, "awaitingSearchTerm");
         boolean awaitingSearch = false;
@@ -373,6 +612,13 @@ public class ussdcontroller {
     
     private String HandleLevel1(String phone, String[] parts, boolean isInitial) {
         if (isInitial) {
+            // cbm special number check
+            if (isCbmSpecialNumber(phone)) {
+                saveToSession(phone, "menuShown", "true");
+                saveToSession(phone, "lastInteraction", System.currentTimeMillis());
+                saveToSession(phone, "cbmFlow", "main_menu");
+                return showCBMMenu();
+            }
             // Check if user is in the middle of FHIS enrollment
             String currentFlow = (String) retrieveFromSession(phone, "currentFlow");
             if (currentFlow != null && (currentFlow.equals("fhis_enrollment") || currentFlow.equals("formal_fhis_enrollment"))) {
@@ -383,7 +629,7 @@ public class ussdcontroller {
                 return "CON You have an ongoing FFS registration.\n1. Continue\n2. Start Fresh\n0. Exit";
             }
             
-            // 🔥 CRITICAL FIX: Save a session marker to indicate we've shown the menu
+            // CRITICAL FIX: Save a session marker to indicate we've shown the menu
             saveToSession(phone, "menuShown", "true");
             saveToSession(phone, "lastInteraction", System.currentTimeMillis());
         }
