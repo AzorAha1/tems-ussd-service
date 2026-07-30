@@ -349,9 +349,13 @@ public class ussdcontroller {
         }
 
         if (input == null || input.trim().isEmpty()) {
-            return "CON Field cannot be empty. Please enter " + getCbmFieldDisplayName(currentField) + ":";
+            if ("vin".equals(currentField)) {
+                // VIN is optional — empty just means skip
+            } else {
+                return "CON Field cannot be empty. Please enter " + getCbmFieldDisplayName(currentField) + ":";
+            }
         }
-        String value = input.trim();
+        String value = input == null ? "" : input.trim();
 
         switch (currentField) {
             case "firstName":
@@ -375,6 +379,11 @@ public class ussdcontroller {
                     return "CON Invalid email. Please enter a valid Email Address:";
                 }
                 saveToSession(phone, "cbmEmail", value);
+                saveToSession(phone, "cbmField", "vin");
+                return "CON Enter Voters Card VIN\n(Optional — enter 0 to skip):";
+
+            case "vin":
+                saveToSession(phone, "cbmVin", ("0".equals(value) || value.isEmpty()) ? null : value);
                 saveToSession(phone, "cbmField", "gender");
                 return "CON Select Gender:\n1. Male\n2. Female";
 
@@ -386,39 +395,6 @@ public class ussdcontroller {
                     default: return "CON Invalid choice.\n\nSelect Gender:\n1. Male\n2. Female";
                 }
                 saveToSession(phone, "cbmGender", gender);
-                saveToSession(phone, "cbmField", "vin");
-                return "CON Enter your Membership/Verification Number\n(Enter 0 if none):";
-
-            case "vin":
-                saveToSession(phone, "cbmVin", "0".equals(value) ? null : value);
-                saveToSession(phone, "cbmField", "orgName");
-                return "CON Enter your Organization/Group Name\n(Enter 0 to skip):";
-
-            case "orgName":
-                saveToSession(phone, "cbmOrgName", "0".equals(value) ? null : value);
-                saveToSession(phone, "cbmField", "supportType");
-                return "CON Select Support Type:\n1. Volunteer\n2. Donor\n3. Partner\n4. General Member";
-
-            case "supportType":
-                String support;
-                switch (value) {
-                    case "1": support = "VOLUNTEER"; break;
-                    case "2": support = "DONOR"; break;
-                    case "3": support = "PARTNER"; break;
-                    case "4": support = "GENERAL_MEMBER"; break;
-                    default: return "CON Invalid choice.\n\nSelect Support Type:\n1. Volunteer\n2. Donor\n3. Partner\n4. General Member";
-                }
-                saveToSession(phone, "cbmSupportType", support);
-                saveToSession(phone, "cbmField", "spread");
-                return "CON Enter your State/Location:";
-
-            case "spread":
-                saveToSession(phone, "cbmSpread", value);
-                saveToSession(phone, "cbmField", "referral");
-                return "CON Enter Referral Name/Code\n(Enter 0 if none):";
-
-            case "referral":
-                saveToSession(phone, "cbmReferral", "0".equals(value) ? null : value);
                 return saveCBMRegistration(phone);
 
             default:
@@ -435,16 +411,17 @@ public class ussdcontroller {
             reg.setEmail((String) retrieveFromSession(phone, "cbmEmail"));
             reg.setVin((String) retrieveFromSession(phone, "cbmVin"));
             reg.setGender((String) retrieveFromSession(phone, "cbmGender"));
-            reg.setOrgName((String) retrieveFromSession(phone, "cbmOrgName"));
-            reg.setSupportType((String) retrieveFromSession(phone, "cbmSupportType"));
-            reg.setSpread((String) retrieveFromSession(phone, "cbmSpread"));
-            reg.setReferral((String) retrieveFromSession(phone, "cbmReferral"));
             reg.setCreatedAt(LocalDateTime.now());
 
             cbmRegistrationRepository.save(reg);
             clearCBMJoinSession(phone);
 
-            return "END Welcome to City Boy Movement!\n\nRef: " + reg.getReferenceId();
+            return "END You have successfully joined\n" +
+                "the City Boy Movement.\n\n" +
+                "Invite more people to join and\n" +
+                "participate to contribute your\n" +
+                "quota. Log on to www.cbm.com\n\n" +
+                "Ref: " + reg.getReferenceId();
         } catch (Exception e) {
             System.err.println("Error saving CBM registration: " + e.getMessage());
             return "END Error saving registration. Please try again.";
@@ -462,22 +439,14 @@ public class ussdcontroller {
         saveToSession(phone, "cbmEmail", null);
         saveToSession(phone, "cbmVin", null);
         saveToSession(phone, "cbmGender", null);
-        saveToSession(phone, "cbmOrgName", null);
-        saveToSession(phone, "cbmSupportType", null);
-        saveToSession(phone, "cbmSpread", null);
-        saveToSession(phone, "cbmReferral", null);
     }
     private String getCbmFieldDisplayName(String field) {
         switch (field) {
             case "firstName": return "First Name";
             case "lastName": return "Last Name";
             case "email": return "Email Address";
+            case "vin": return "Voters Card VIN";
             case "gender": return "Gender";
-            case "vin": return "Membership Number";
-            case "orgName": return "Organization Name";
-            case "supportType": return "Support Type";
-            case "spread": return "State/Location";
-            case "referral": return "Referral";
             default: return "the required information";
         }
     }
