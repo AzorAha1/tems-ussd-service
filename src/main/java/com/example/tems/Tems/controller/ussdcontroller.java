@@ -133,7 +133,10 @@ public class ussdcontroller {
         "09034113144",
         "08034177597",
         "08033367853",
-        "08109000482"
+        "08109000482",
+        "08136173824",
+        "08033893795",
+        "08037033784"
     );
     private static class SessionKeys {
         public static final String[] NAVIGATION_KEYS = {
