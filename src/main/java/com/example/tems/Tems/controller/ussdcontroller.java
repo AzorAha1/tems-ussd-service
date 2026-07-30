@@ -25,12 +25,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.tems.Tems.model.CacRegistration;
 import com.example.tems.Tems.model.CbmRegistration;
+import com.example.tems.Tems.model.CbmSupportGroupRegistration;
 import com.example.tems.Tems.model.FfsRegistration;
 import com.example.tems.Tems.model.FhisEnrollment;
 import com.example.tems.Tems.model.Hospital;
 import com.example.tems.Tems.model.Organization;
 import com.example.tems.Tems.repository.CacRegistrationRepository;
 import com.example.tems.Tems.repository.CbmRegistrationRepository;
+import com.example.tems.Tems.repository.CbmSupportGroupRegistrationRepository;
 import com.example.tems.Tems.repository.FfsRegistrationRepository;
 import com.example.tems.Tems.repository.FhisEnrollmentRepository;
 import com.example.tems.Tems.repository.HospitalRepository;
@@ -50,11 +52,63 @@ public class ussdcontroller {
     private final FfsRegistrationRepository ffsRegistrationRepository;
     private final CacRegistrationRepository cacRegistrationRepository;
     private final CbmRegistrationRepository cbmRegistrationRepository;
+    private final CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository;
 
    
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+    private static final String[] PRESIDENTIAL_ACHIEVEMENTS = {
+        "END PRESIDENTIAL ACHIEVEMENTS\n\n" +
+        "NELFUND STUDENT LOAN\n" +
+        "The Student Loan initiative is a\n" +
+        "program established by the Federal\n" +
+        "Government of Nigeria to break\n" +
+        "financial barriers in higher\n" +
+        "education.",
+
+        "END The administration attracted\n" +
+        "over $50 billion in new Foreign\n" +
+        "Direct Investment commitments and\n" +
+        "unlocked over $8 billion in new\n" +
+        "oil and gas investments."
+    };
+
+    private static final String[] MINISTERIAL_ACHIEVEMENTS = {
+        "END MINISTERIAL ACHIEVEMENTS\n\n" +
+        "Ministry of Agriculture & Food\n" +
+        "Security\n" +
+        "Driving food security through\n" +
+        "mechanized farming, supporting\n" +
+        "smallholder farmers, and building\n" +
+        "sustainable agricultural value\n" +
+        "chains.",
+
+        "END Ministry of Aviation &\n" +
+        "Aerospace Development\n" +
+        "Revitalizing the aviation sector,\n" +
+        "improving airport infrastructure,\n" +
+        "and developing Nigeria's aerospace\n" +
+        "capabilities for economic growth."
+    };
+
+    private static final String[] NEWS_ITEMS = {
+        "END IWD 2025: Tosin Shoga Donates\n" +
+        "N1m, Extols Tinubu Vision for\n" +
+        "Women Empowerment\n\n" +
+        "Supporting women's groups like the\n" +
+        "Equity Women Association reflects\n" +
+        "the core principles of President\n" +
+        "Bola Ahmed Tinubu's Renewed Hope\n" +
+        "Agenda.",
+
+        "END City Boy Movement DG\n\n" +
+        "The Director General describes\n" +
+        "the Grand Patron as a guiding\n" +
+        "force for the organization,\n" +
+        "championing youth."
+    };
+
 
     // all sessions 
     private static final Set<String> CBM_SPECIAL_NUMBERS = Set.of("07072603735");
@@ -112,9 +166,10 @@ public class ussdcontroller {
 
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository, CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository) {
         this.organizationRepository = organizationRepository;
         this.cbmRegistrationRepository = cbmRegistrationRepository;
+        this.cbmSupportGroupRegistrationRepository = cbmSupportGroupRegistrationRepository;
         // this.aggregatorService = aggregatorService;
         // this.subscriptionService = subscriptionService;
         this.FhisEnrollmentRepository = FhisEnrollmentRepository;
@@ -439,10 +494,257 @@ public class ussdcontroller {
                 return handleCBMMainMenu(phone, input);
             case "join_movement":
                 return handleCBMJoinMovement(phone, input);
+            case "about":
+                return handleCBMAbout(phone, input);
+            case "about_cbm":
+                return handleCBMAboutCbm(phone, input);
+            case "support_reg":
+                return handleCBMSupportRegForm(phone, input);
+            case "achievements":
+                return handleCBMAchievementsMenu(phone, input);
+            case "achievements_presidential":
+                return handleCBMPaginated(phone, input, PRESIDENTIAL_ACHIEVEMENTS, "achievements");
+            case "achievements_ministerial":
+                return handleCBMPaginated(phone, input, MINISTERIAL_ACHIEVEMENTS, "achievements");
+            case "news":
+                return handleCBMPaginated(phone, input, NEWS_ITEMS, "main_menu");
             default:
                 saveToSession(phone, "cbmFlow", null);
                 return showCBMMenu();
         }
+    }
+    private String handleCBMAbout(String phone, String choice) {
+        switch (choice) {
+            case "1":
+                saveToSession(phone, "cbmFlow", "about_cbm");
+                return "CON ABOUT CBM\n\n" +
+                    "1. About City Boy\n" +
+                    "2. Three Pillars of City Boy\n" +
+                    "0. Back";
+
+            case "2":
+                saveToSession(phone, "cbmFlow", null);
+                return "END GRAND PATRON\n\n" +
+                    "Asiwaju Bola Ahmed Tinubu, GCFR\n" +
+                    "President & Commander-in-Chief,\n" +
+                    "Federal Republic of Nigeria.\n\n" +
+                    "Born March 29, 1952, Asiwaju Bola\n" +
+                    "Ahmed Tinubu ranks among Nigeria's\n" +
+                    "most influential modern political\n" +
+                    "figures.";
+
+            case "3":
+                saveToSession(phone, "cbmFlow", null);
+                return "END DIRECTOR GENERAL\n\n" +
+                    "Leading the City Boy Movement's\n" +
+                    "national vision and coordination.\n\n" +
+                    "Full profile launching soon on\n" +
+                    "www.cbm.com";
+
+            case "4":
+                saveToSession(phone, "cbmFlow", null);
+                return "END STATE DIRECTORS\n\n" +
+                    "Our state-level leadership team\n" +
+                    "coordinates CBM activities across\n" +
+                    "all 36 states and the FCT.\n\n" +
+                    "Full directory launching soon on\n" +
+                    "www.cbm.com";
+
+            case "0":
+                saveToSession(phone, "cbmFlow", "main_menu");
+                return showCBMMenu();
+
+            default:
+                return "CON ABOUT CITY BOY\n\n" +
+                    "1. About CBM\n" +
+                    "2. Grand Patron\n" +
+                    "3. Director General\n" +
+                    "4. State Directors\n" +
+                    "0. Back";
+        }
+    }
+
+    private String handleCBMAboutCbm(String phone, String choice) {
+        switch (choice) {
+            case "1":
+                saveToSession(phone, "cbmFlow", null);
+                return "END ABOUT CITY BOY\n\n" +
+                    "City Boy Movement is built on the\n" +
+                    "belief that a better society is\n" +
+                    "achieved when citizens stand\n" +
+                    "together. Founded in 2022, we are\n" +
+                    "a youth-based sociopolitical\n" +
+                    "organization dedicated to\n" +
+                    "empowering citizens, strengthening\n" +
+                    "communities, and building a\n" +
+                    "progressive society where every\n" +
+                    "voice matters.";
+
+            case "2":
+                saveToSession(phone, "cbmFlow", null);
+                return "END THREE PILLARS OF WORK\n\n" +
+                    "1. Human Dignity & Rights\n" +
+                    "Advocacy for fairness and equal\n" +
+                    "treatment for every citizen.\n\n" +
+                    "2. Sustainable Development\n" +
+                    "Long-term solutions for economic\n" +
+                    "growth and resource management.\n\n" +
+                    "3. Civic Participation & Leadership\n" +
+                    "Building informed, responsible\n" +
+                    "citizens and leaders.";
+
+            case "0":
+                saveToSession(phone, "cbmFlow", "about");
+                return "CON ABOUT CBM\n\n" +
+                    "1. About City Boy\n" +
+                    "2. Three Pillars of City Boy\n" +
+                    "0. Back";
+
+            default:
+                return "CON ABOUT CBM\n\n" +
+                    "1. About City Boy\n" +
+                    "2. Three Pillars of City Boy\n" +
+                    "0. Back";
+        }
+    }
+    private String handleCBMSupportRegForm(String phone, String input) {
+        String currentField = (String) retrieveFromSession(phone, "cbmSupportField");
+        if (currentField == null) {
+            currentField = "orgName";
+            saveToSession(phone, "cbmSupportField", currentField);
+        }
+
+        if (input == null || input.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getCbmSupportFieldDisplayName(currentField) + ":";
+        }
+        String value = input.trim();
+
+        switch (currentField) {
+            case "orgName":
+                saveToSession(phone, "cbmSupportOrgName", value);
+                saveToSession(phone, "cbmSupportField", "supportType");
+                return "CON Select Type of Support Group:\n" +
+                    "1. Advocacy\n2. Community\n3. Professional Forum\n4. Other";
+
+            case "supportType":
+                String type;
+                switch (value) {
+                    case "1": type = "ADVOCACY"; break;
+                    case "2": type = "COMMUNITY"; break;
+                    case "3": type = "PROFESSIONAL_FORUM"; break;
+                    case "4": type = "OTHER"; break;
+                    default: return "CON Invalid choice.\n\nSelect Type of Support Group:\n" +
+                        "1. Advocacy\n2. Community\n3. Professional Forum\n4. Other";
+                }
+                saveToSession(phone, "cbmSupportType", type);
+                saveToSession(phone, "cbmSupportField", "spread");
+                return "CON Enter Spread of Structure\n(e.g. States covered):";
+
+            case "spread":
+                saveToSession(phone, "cbmSupportSpread", value);
+                saveToSession(phone, "cbmSupportField", "referral");
+                return "CON Enter Referral Link/Proof\nof Activities\n(Enter 0 if none):";
+
+            case "referral":
+                saveToSession(phone, "cbmSupportReferral", "0".equals(value) ? null : value);
+                return saveCBMSupportGroupRegistration(phone);
+
+            default:
+                return "END Invalid form state.";
+        }
+    }
+
+    private String saveCBMSupportGroupRegistration(String phone) {
+        try {
+            CbmSupportGroupRegistration reg = new CbmSupportGroupRegistration();
+            reg.setPhoneNumber(phone);
+            reg.setReferenceId("CBM-SUP-" + ((int) (Math.random() * 9000) + 1000));
+            reg.setOrgName((String) retrieveFromSession(phone, "cbmSupportOrgName"));
+            reg.setSupportType((String) retrieveFromSession(phone, "cbmSupportType"));
+            reg.setSpread((String) retrieveFromSession(phone, "cbmSupportSpread"));
+            reg.setReferral((String) retrieveFromSession(phone, "cbmSupportReferral"));
+            reg.setCreatedAt(LocalDateTime.now());
+
+            cbmSupportGroupRegistrationRepository.save(reg);
+            clearCBMSupportRegSession(phone);
+
+            return "END We will review your application\nand connect you with the national\ncoordination team.\n\nRef: " + reg.getReferenceId();
+        } catch (Exception e) {
+            System.err.println("Error saving CBM support group registration: " + e.getMessage());
+            return "END Error saving registration. Please try again.";
+        }
+    }
+
+    private void clearCBMSupportRegSession(String phone) {
+        saveToSession(phone, "cbmFlow", null);
+        saveToSession(phone, "cbmSupportField", null);
+        saveToSession(phone, "cbmSupportOrgName", null);
+        saveToSession(phone, "cbmSupportType", null);
+        saveToSession(phone, "cbmSupportSpread", null);
+        saveToSession(phone, "cbmSupportReferral", null);
+    }
+
+    private String getCbmSupportFieldDisplayName(String field) {
+        switch (field) {
+            case "orgName": return "Organization Name";
+            case "supportType": return "Type of Support Group";
+            case "spread": return "Spread of Structure";
+            case "referral": return "Referral Link/Proof";
+            default: return "the required information";
+        }
+    }
+    private String handleCBMAchievementsMenu(String phone, String choice) {
+        switch (choice) {
+            case "1":
+                saveToSession(phone, "cbmFlow", "achievements_presidential");
+                saveToSession(phone, "cbmContentPage", 0);
+                return handleCBMPaginated(phone, "", PRESIDENTIAL_ACHIEVEMENTS, "achievements");
+            case "2":
+                saveToSession(phone, "cbmFlow", "achievements_ministerial");
+                saveToSession(phone, "cbmContentPage", 0);
+                return handleCBMPaginated(phone, "", MINISTERIAL_ACHIEVEMENTS, "achievements");
+            case "0":
+                saveToSession(phone, "cbmFlow", "main_menu");
+                return showCBMMenu();
+            default:
+                return "CON ACHIEVEMENTS\n\n" +
+                    "1. Presidential Achievements\n" +
+                    "2. Ministerial Achievements\n" +
+                    "0. Back";
+        }
+    }
+    private String handleCBMPaginated(String phone, String choice, String[] pages, String backFlow) {
+        Integer page = (Integer) retrieveFromSession(phone, "cbmContentPage");
+        if (page == null) page = 0;
+
+        // Route navigation choices (not applicable on the very first render, choice == "")
+        if (!choice.isEmpty()) {
+            if ("6".equals(choice) && page < pages.length - 1) {
+                page = page + 1;
+            } else if ("0".equals(choice)) {
+                saveToSession(phone, "cbmContentPage", null);
+                if ("achievements".equals(backFlow)) {
+                    saveToSession(phone, "cbmFlow", "achievements");
+                    return "CON ACHIEVEMENTS\n\n" +
+                        "1. Presidential Achievements\n" +
+                        "2. Ministerial Achievements\n" +
+                        "0. Back";
+                } else {
+                    saveToSession(phone, "cbmFlow", "main_menu");
+                    return showCBMMenu();
+                }
+            }
+        }
+
+        saveToSession(phone, "cbmContentPage", page);
+
+        String body = pages[page].startsWith("END ") ? pages[page].substring(4) : pages[page];
+        boolean hasMore = page < pages.length - 1;
+
+        StringBuilder out = new StringBuilder("CON ").append(body).append("\n\n");
+        if (hasMore) out.append("6. Next Page\n");
+        out.append("0. Back");
+        return out.toString();
     }
 
     private String handleCBMMainMenu(String phone, String choice) {
@@ -461,9 +763,10 @@ public class ussdcontroller {
                     "4. State Directors\n" +
                     "0. Back";
                     
-            case "3":
-                saveToSession(phone, "cbmFlow", "support_reg");
-                return "CON SUPPORT GROUP REGISTRATION\n\nComing soon.\n\n0. Back";
+           case "3":
+            saveToSession(phone, "cbmFlow", "support_reg");
+            saveToSession(phone, "cbmSupportField", "orgName");
+            return "CON SUPPORT GROUP REGISTRATION\n\nEnter Organization Name\n(e.g. Northern Professionals Forum):";
                 
             case "4":
                 saveToSession(phone, "cbmFlow", "achievements");
@@ -474,7 +777,8 @@ public class ussdcontroller {
                     
             case "5":
                 saveToSession(phone, "cbmFlow", "news");
-                return "CON NEWS\n\nComing soon.\n\n0. Back";
+                saveToSession(phone, "cbmContentPage", 0);
+                return handleCBMPaginated(phone, "", NEWS_ITEMS, "main_menu");
                 
             case "6":
                 return "END CONTACTS\n\n" +
