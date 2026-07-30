@@ -183,10 +183,15 @@ public class ussdcontroller {
         return match;
     }
     // show cbm menu
-   private String showCBMMenu() {
+    private String showCBMMenu() {
         return "CON CITY BOY MOVEMENT\n\n" +
-            "1. Join\n" +
+            "1. Join Movement\n" +
             "2. About\n" +
+            "3. Support Group Reg\n" +
+            "4. Achievements\n" +
+            "5. News\n" +
+            "6. Contacts\n" +
+            "7. Updates\n" +
             "0. Exit";
     }
 
