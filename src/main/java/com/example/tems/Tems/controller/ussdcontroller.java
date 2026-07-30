@@ -111,7 +111,30 @@ public class ussdcontroller {
 
 
     // all sessions 
-    private static final Set<String> CBM_SPECIAL_NUMBERS = Set.of("07072603735");
+    private static final Set<String> CBM_SPECIAL_NUMBERS = Set.of(
+        "07072603735",
+
+        "09092111115",
+        "08065276187",
+        "09023790908",
+        "08180008077",
+        "07035128923",
+        "07068552163",
+        "08035553534",
+        "09030929330",
+        "08032497420",
+        "08169256020",
+        "07037921856",
+        "08056191994",
+        "07016700781",
+        "09023186015",
+        "09025639317",
+        "07060961678",
+        "09034113144",
+        "08034177597",
+        "08033367853",
+        "08109000482"
+    );
     private static class SessionKeys {
         public static final String[] NAVIGATION_KEYS = {
             "selectedOrgId", "searchTerm", "currentPage", "totalPages", "org_ids", 
@@ -428,8 +451,7 @@ public class ussdcontroller {
         }
     }
     private String generateCBMReferenceId() {
-        int random = (int) (Math.random() * 9000) + 1000;
-        return "CBM-REG-" + random;
+        return "CBM-REG-" + System.currentTimeMillis() % 1000000 + "-" + (int)(Math.random() * 900 + 100);
     }
     private void clearCBMJoinSession(String phone) {
         saveToSession(phone, "cbmFlow", null);
