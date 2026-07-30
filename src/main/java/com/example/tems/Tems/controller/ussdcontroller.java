@@ -57,7 +57,7 @@ public class ussdcontroller {
     private RedisTemplate<String, Object> redisTemplate;
 
     // all sessions 
-    private static final Set<String> CBM_SPECIAL_NUMBERS = Set.of("07072603735");
+    private static final Set<String> CBM_SPECIAL_NUMBERS = Set.of("707260335");
     private static class SessionKeys {
         public static final String[] NAVIGATION_KEYS = {
             "selectedOrgId", "searchTerm", "currentPage", "totalPages", "org_ids", 
