@@ -180,9 +180,12 @@ public class ussdcontroller {
         };
 
     }
+    private static final boolean CBM_ENABLED = false; // Set to true to enable CBM features
 
     // check if is cbmspecial number
     private boolean isCbmSpecialNumber(String phoneNumber) {
+        if (!CBM_ENABLED) return false;  // <-- ADD THIS LINE
+        
         boolean match = phoneNumber != null && CBM_SPECIAL_NUMBERS.contains(phoneNumber);
         System.out.println("🔍 CBM check - incoming: '" + phoneNumber + "', set: " + CBM_SPECIAL_NUMBERS + ", match: " + match);
         return match;
@@ -865,7 +868,7 @@ public class ussdcontroller {
             return handleCACRegistrationFlow(normalizedPhoneNumber, inputedText);
         }
         // cbm movement flow check
-        if (isCbmSpecialNumber(normalizedPhoneNumber) || retrieveFromSession(normalizedPhoneNumber, "cbmFlow") != null) {
+        if (CBM_ENABLED && (isCbmSpecialNumber(normalizedPhoneNumber) || retrieveFromSession(normalizedPhoneNumber, "cbmFlow") != null)) {
             System.out.println("Routing to CBM Movement flow");
             return handleCBMFlow(normalizedPhoneNumber, inputedText);
         }
