@@ -40,6 +40,9 @@ import com.example.tems.Tems.repository.OrganizationRepository;
 import com.example.tems.Tems.service.AggregatorService;
 import com.example.tems.Tems.service.SubscriptionService;
 
+
+
+
 @RestController
 public class ussdcontroller {
 
@@ -143,6 +146,27 @@ public class ussdcontroller {
         "07062807200",
         "07065551742"
     );
+    @PostMapping("/add-nabteb")
+    public Map<String, Object> addNabteb() {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            // Create a new Nabteb entity
+            Organization nabteb = new Organization();
+            nabteb.setName("National Business and Technical Examinations Board");
+            nabteb.setInitials("NABTEB");
+            nabteb.setContactAddress("No. 1 Benin-Agbor Road, Ikpoba Hill, P.M.B. 1747, Benin City, Edo State. Liaison Office: 94 Aminu Kano Crescent, Wuse 2, Abuja");
+            nabteb.setContactTelephone("+234 816 545 1556, +234 803 600 2824, +234 805 854 2026");
+            nabteb.setDescription("Federal Government examination and assessment body responsible for conducting examinations and awarding certificates in business and technical education. Conducts NBC, NTC, ANBC, ANTC and other approved assessments.");
+            organizationRepository.save(nabteb);
+            response.put("status", "success");
+            response.put("message", "NABTEB added successfully.");  
+        } catch (Exception e) {
+            response.put("status", "error");
+            response.put("message", "Failed to add NABTEB: " + e.getMessage());
+            
+        }
+        return response;
+    }
     private static class SessionKeys {
         public static final String[] NAVIGATION_KEYS = {
             "selectedOrgId", "searchTerm", "currentPage", "totalPages", "org_ids", 
@@ -154,6 +178,14 @@ public class ussdcontroller {
         public static final String[] ENROLLMENT_KEYS = {
             "currentFlow", "enrollmentOrgId", "currentField", "waitingForContinue",
             "existingEnrollmentFlow", "handlingExistingEnrollment", "viewingDetails"
+        };
+        public static final String[] NABTEB_KEYS = {
+            "nabtebFlow", "nabtebSubMenu", "nabtebRegField",
+            "nabtebRegType", "nabtebFullName", "nabtebPhone",
+            "nabtebDob", "nabtebGender", "nabtebState",
+            "nabtebLga", "nabtebExamType", "nabtebExamCentre",
+            "nabtebIdNumber", "nabtebRegNumber", "nabtebExamYear",
+            "nabtebVerifyType", "nabtebCandidateNo", "nabtebCertNo"
         };
 
         
@@ -169,7 +201,13 @@ public class ussdcontroller {
             "ffsRegOccupation", "ffsRegOrg","cacRegFlow", "cacRegType", "cacRegField",
             "cacRegName", "cacRegEmail", "cacRegState", "cacRegOccupation",
             "cacVerifyType","cbmFlow", "cbmField", "cbmFirstName", "cbmLastName", "cbmEmail", 
-            "cbmVin", "cbmGender", "cbmOrgName", "cbmSupportType", "cbmSpread", "cbmReferral"
+            "cbmVin", "cbmGender", "cbmOrgName", "cbmSupportType", "cbmSpread", "cbmReferral",
+            "nabtebFlow", "nabtebSubMenu", "nabtebRegField",
+            "nabtebRegType", "nabtebFullName", "nabtebPhone",
+            "nabtebDob", "nabtebGender", "nabtebState",
+            "nabtebLga", "nabtebExamType", "nabtebExamCentre",
+            "nabtebIdNumber", "nabtebRegNumber", "nabtebExamYear",
+            "nabtebVerifyType", "nabtebCandidateNo", "nabtebCertNo"
         };
 
         // FFS registration keys can be added here if needed
@@ -867,10 +905,20 @@ public class ussdcontroller {
             System.out.println("Routing to CAC Registration flow: " + cacRegFlow);
             return handleCACRegistrationFlow(normalizedPhoneNumber, inputedText);
         }
+        String nabtebFlow = (String) retrieveFromSession(normalizedPhoneNumber, "nabtebFlow");
+        if (nabtebFlow != null) {
+            System.out.println("Routing to NABTEB flow: " + nabtebFlow);
+            return handleNABTEBRegistrationFlow(normalizedPhoneNumber, inputedText);
+        }
         // cbm movement flow check
         if (CBM_ENABLED && (isCbmSpecialNumber(normalizedPhoneNumber) || retrieveFromSession(normalizedPhoneNumber, "cbmFlow") != null)) {
             System.out.println("Routing to CBM Movement flow");
             return handleCBMFlow(normalizedPhoneNumber, inputedText);
+        } else if (!CBM_ENABLED && retrieveFromSession(normalizedPhoneNumber, "cbmFlow") != null) {
+        // CBM is off — wipe any leftover session so user falls through to TEMS cleanly
+            clearCBMJoinSession(normalizedPhoneNumber);
+            clearCBMSupportRegSession(normalizedPhoneNumber);
+            saveToSession(normalizedPhoneNumber, "cbmContentPage", null);
         }
         // handle cbm flow 
         
@@ -921,7 +969,7 @@ public class ussdcontroller {
     private String HandleLevel1(String phone, String[] parts, boolean isInitial) {
         if (isInitial) {
             // cbm special number check
-            if (isCbmSpecialNumber(phone)) {
+            if (CBM_ENABLED && (isCbmSpecialNumber(phone))) {
                 saveToSession(phone, "menuShown", "true");
                 saveToSession(phone, "lastInteraction", System.currentTimeMillis());
                 saveToSession(phone, "cbmFlow", "main_menu");
@@ -1079,6 +1127,9 @@ public class ussdcontroller {
 
         boolean isCAC = orgofchoice.getName().toUpperCase().contains("CAC") 
                     || orgofchoice.getName().toUpperCase().contains("CORPORATE AFFAIRS");
+
+        boolean isNABTEB = orgofchoice.getName().toUpperCase().contains("NABTEB")
+                || orgofchoice.getName().toUpperCase().contains("NATIONAL BUSINESS");
         
         StringBuilder menu = new StringBuilder("CON " + orgofchoice.getName() + "\n" +
                 "1. Register/Verify\n" +
@@ -1100,16 +1151,25 @@ public class ussdcontroller {
             menu.append("12. About CAC\n");
             menu.append("13. Account/Profile\n");
         }
+
+        if (isNABTEB) {
+            menu.append("10. Account / Profile\n");
+            menu.append("11. More Information\n");
+        }
+
         menu.append("0. Main Menu");
         return menu.toString();
     }
 
     private String HandleLevel3(String choice, String phone, String[] parts) {
         String currentSubMenu = (String) retrieveFromSession(phone, "currentSubMenu");
-        if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu)) {
+        // if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu)) {
+        //     return handleLevel4(choice, phone, parts);
+        // }
+        if (currentSubMenu != null && !currentSubMenu.isEmpty()) {
             return handleLevel4(choice, phone, parts);
         }
-    // Check if we're coming from "1. Search Organizations"
+        // Check if we're coming from "1. Search Organizations"
         if (parts[0].equals("1") && parts.length == 2) {
             // This is the search query after selecting "1"
             String searchTerm = choice.trim();
@@ -1239,6 +1299,14 @@ public class ussdcontroller {
                             "1. Register\n" +
                             "2. Verify\n" +
                             "0. Back";
+                    
+                    
+                    } else if (isNABTEB(org)) {
+                        saveToSession(phone, "currentSubMenu", "nabteb_register_verify");
+                        return "CON Register / Verify\n\n" +
+                            "1. Register\n" +
+                            "2. Verify\n" +
+                            "0. Back";
                     } else {
                         return "CON Register/Verify:\nThis service is coming soon.\n\n0. Back";    
                 }
@@ -1256,7 +1324,18 @@ public class ussdcontroller {
                     "6. Emergency Preparedness Consultation\n" +
                     "7. Callback Request\n" +
                     "0. Back";
-            } else {
+                } else if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "nabteb_request");
+                    return "CON Request Service\n\n" +
+                        "1. Examination Enquiry\n" +
+                        "2. Registration Enquiry\n" +
+                        "3. Result Enquiry\n" +
+                        "4. Certificate Enquiry\n" +
+                        "5. Verification Enquiry\n" +
+                        "6. Candidate Enquiry\n" +
+                        "7. General Enquiry\n" +
+                        "0. Back";
+                }  else {
                 return "CON Request:\nThis service is coming soon.\n\n0. Back";
             }
                 
@@ -1272,6 +1351,14 @@ public class ussdcontroller {
                         "6. Hazardous Materials Incident\n" +
                         "7. False Alarm Report\n" +
                         "0. Back";
+                } else if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "nabteb_verify");
+                    return "CON Verify Result / Certificate\n\n" +
+                        "1. Verify Result\n" +
+                        "2. Verify Certificate\n" +
+                        "3. Check Result Status\n" +
+                        "4. Verification Guidelines\n" +
+                        "0. Back";
                 } else {
                     return "CON Report:\nThis service is coming soon.\n\n0. Back";
                 }
@@ -1279,13 +1366,21 @@ public class ussdcontroller {
             case "4": // Guidelines & Procedures
                 if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
                     saveToSession(phone, "currentSubMenu", "guidelines");
-                    return "CON Fire Safety Guidelines\n\n" +
-                        "1. Home Fire Safety\n" +
-                        "2. Office Fire Safety\n" +
-                        "3. School Fire Safety\n" +
-                        "4. Market Fire Prevention\n" +
-                        "5. Fuel and Gas Safety\n" +
-                        "6. Emergency Evacuation Procedures\n" +
+                    return "CON Examination Centre\n\n" +
+                        "1. Find Centre\n" +
+                        "2. Search by State\n" +
+                        "3. Search by LGA\n" +
+                        "4. My Assigned Centre\n" +
+                        "5. Centre Information\n" +
+                        "0. Back";
+                } else if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "nabteb_centre");
+                    return  "CON Examination Centre\n\n" +
+                        "1. Find Centre\n" +
+                        "2. Search by State\n" +
+                        "3. Search by LGA\n" +
+                        "4. My Assigned Centre\n" +
+                        "5. Centre Information\n" +
                         "0. Back";
                 } else {
                     return "CON Guidelines & Procedures:\nNot available at this time.\n\n0. Back";
@@ -1301,6 +1396,19 @@ public class ussdcontroller {
                         "4. Emergency response procedures\n" +
                         "5. Contact information\n" +
                         "0. Back";
+                } else if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "nabteb_guidelines");
+                    return "CON Guidelines / Procedures\n\n" +
+                        "1. Registration Procedure\n" +
+                        "2. Examination Procedure\n" +
+                        "3. Candidate Requirements\n" +
+                        "4. Examination Rules\n" +
+                        "5. Result Procedure\n" +
+                        "6. Certificate Procedure\n" +
+                        "7. Verification Procedure\n" +
+                        "8. Centre Guidelines\n" +
+                        "9. Payment Procedure\n" +
+                        "0. Back";
                 } else {
                     return "CON FAQs/Links:\nNot available at this time.\n\n0. Back";
                 }
@@ -1314,6 +1422,18 @@ public class ussdcontroller {
                         "State Fire Service:\n" +
                         "Contact your state command.\n\n" +
                         "Dial 112 for all emergencies.";
+                } else if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "nabteb_faqs");
+                    return "CON FAQs / Links\n\n" +
+                        "1. Registration FAQs\n" +
+                        "2. Examination FAQs\n" +
+                        "3. Result FAQs\n" +
+                        "4. Certificate FAQs\n" +
+                        "5. Verification FAQs\n" +
+                        "6. Centre FAQs\n" +
+                        "7. Payment FAQs\n" +
+                        "8. Important Links\n" +
+                        "0. Back";
                 } else {
                     return "CON Call Lines:\n" + 
                             (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
@@ -1331,7 +1451,19 @@ public class ussdcontroller {
                         "5. Public Safety Announcements\n" +
                         "6. Emergency Preparedness Campaigns\n" +
                         "0. Back";
-                } else {
+                } else if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "nabteb_updates");
+                    return "CON Alerts & Updates\n\n" +
+                        "1. Examination Updates\n" +
+                        "2. Registration Updates\n" +
+                        "3. Result Updates\n" +
+                        "4. Certificate Updates\n" +
+                        "5. Verification Updates\n" +
+                        "6. Centre Updates\n" +
+                        "7. Payment Updates\n" +
+                        "0. Back";
+                }
+                else {
                     return "CON Tips/Updates:\nNo updates at this time.\n\n0. Back";
                 }
                 
@@ -1347,6 +1479,16 @@ public class ussdcontroller {
                         "- Rescue operations\n" +
                         "- Fire safety inspections\n\n" +
                         "Contact: 0703-590-4570";
+                } else if (isNABTEB(org)) {
+                    return  "CON Tips / Updates\n\n" +
+                        "1. Examination Updates\n" +
+                        "2. Registration Updates\n" +
+                        "3. Result Updates\n" +
+                        "4. Timetable Updates\n" +
+                        "5. Registration Deadlines\n" +
+                        "6. Important Notices\n" +
+                        "7. Candidate Tips\n" +
+                        "0. Back";
                 } else {
                     return "CON About " + org.getName() + ":\n" +
                             (org.getDescription() != null ? org.getDescription() : "Not available") +
@@ -1364,7 +1506,18 @@ public class ussdcontroller {
                         "4. Approved Fire Safety Consultants\n" +
                         "5. Office Hours\n" +
                         "0. Back";
-                } else {
+                } else if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "more_info_ffs");
+                    return "END About NABTEB\n\n" +
+                        "National Business and Technical\n" +
+                        "Examinations Board (NABTEB)\n\n" +
+                        "A Federal Government examination\n" +
+                        "body conducting NBC, NTC, ANBC,\n" +
+                        "ANTC and other approved\n" +
+                        "assessments in business and\n" +
+                        "technical education.";
+                }
+                else {
                     return showMoreOptions(org, phone);
                 }
             
@@ -1378,8 +1531,35 @@ public class ussdcontroller {
                         "4. View Recent Requests\n" +
                         "5. Account Recovery\n" +
                         "0. Back";
-                } else {
+                } else if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "nabteb_account");
+                    return "CON Account / Profile\n\n" +
+                        "1. My Registration\n" +
+                        "2. My Examination\n" +
+                        "3. My Centre\n" +
+                        "4. My Result Status\n" +
+                        "5. My Requests\n" +
+                        "6. My Notifications\n" +
+                        "7. Update Profile\n" +
+                        "0. Back";
+                }
+                else {
                     return "CON Account:\nNot available for this organization.\n\n0. Back";
+                }
+            case "11": // More Info
+                if (isNABTEB(org)) {
+                    saveToSession(phone, "currentSubMenu", "nabteb_more");
+                    return "CON More Information\n\n" +
+                        "1. Technical Education\n" +
+                        "2. Business Education\n" +
+                        "3. Vocational Information\n" +
+                        "4. Programmes\n" +
+                        "5. Publications\n" +
+                        "6. Public Notices\n" +
+                        "7. Other Information\n" +
+                        "0. Back";
+                } else {
+                    return "CON More Info:\nNot available for this organization.\n\n0. Back";
                 }
                 
             case "0": // Main Menu
@@ -1464,6 +1644,47 @@ public class ussdcontroller {
         }
         if ("cac_verify_menu".equals(currentSubMenu) || "cac_verify_form".equals(currentSubMenu)) {
             return handleCACVerifyFlow(phone, choice);
+        }
+        if ("nabteb_register_verify".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleNABTEBRegisterVerifyMenu(choice, phone);
+        }
+        if ("nabteb_request".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleNABTEBRequestEnquiry(choice, phone);
+        }
+        if ("nabteb_verify".equals(currentSubMenu) || "nabteb_verify_form".equals(currentSubMenu)) {
+            return handleNABTEBVerifyFlow(phone, choice);
+        }
+        if ("nabteb_centre".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleNABTEBExamCentre(choice, phone);
+        }
+        if ("nabteb_guidelines".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleNABTEBGuidelines(choice, phone);
+        }
+        if ("nabteb_faqs".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleNABTEBFAQs(choice, phone);
+        }
+        if ("nabteb_updates".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleNABTEBTips(choice, phone);
+        }
+        if ("nabteb_account".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleNABTEBAccount(choice, phone);
+        }
+        if ("nabteb_more".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleNABTEBMoreInfo(choice, phone);
+        }
+
+        // NABTEB registration/verification flows
+        String nabtebFlow = (String) retrieveFromSession(phone, "nabtebFlow");
+        if (nabtebFlow != null) {
+            return handleNABTEBRegistrationFlow(phone, choice);
         }
         
         // EXISTING: FHIS More Info
@@ -1552,6 +1773,800 @@ public class ussdcontroller {
                "3. View all hospitals\n" +
                "0. Back to menu";
     }
+    private String handleNABTEBRegisterVerifyMenu(String choice, String phone) {
+        switch (choice) {
+            case "1": // New Candidate
+                saveToSession(phone, "nabtebFlow", "new_candidate");
+                saveToSession(phone, "nabtebRegField", "fullName");
+                return "CON NEW CANDIDATE REGISTRATION\n\nEnter Full Name:";
+            case "2": // Existing Candidate
+                saveToSession(phone, "nabtebFlow", "existing_candidate");
+                saveToSession(phone, "nabtebRegField", "regNumber");
+                return "CON EXISTING CANDIDATE\n\nEnter Candidate / Registration Number:";
+            case "3": // Exam Registration
+                saveToSession(phone, "nabtebFlow", "exam_registration");
+                saveToSession(phone, "nabtebRegField", "regNumber");
+                return "CON EXAMINATION REGISTRATION\n\nEnter Candidate / Registration Number:";
+            case "4": // Registration Requirements
+                saveToSession(phone, "currentSubMenu", "nabteb_reqs");
+                return "END REGISTRATION REQUIREMENTS\n\n" +
+                    "1. Examination Type: NBC/NTC/ANBC/ANTC\n" +
+                    "2. Candidate Requirements: Valid ID, photos, birth cert\n" +
+                    "3. Required Documents: School testimonial, fee receipt\n" +
+                    "4. Registration Period: Jan - March 2026\n" +
+                    "5. Registration Procedure: Visit accredited centre\n\n" +
+                    "Dial *7447# → NABTEB → Register for more.";
+            case "5": // Registration Status
+                saveToSession(phone, "nabtebFlow", "reg_status");
+                saveToSession(phone, "nabtebRegField", "regNumber");
+                return "CON CHECK REGISTRATION STATUS\n\nEnter Registration Number:";
+            case "6": // Update Information
+                saveToSession(phone, "nabtebFlow", "update_info");
+                saveToSession(phone, "nabtebRegField", "regNumber");
+                return "CON UPDATE INFORMATION\n\nEnter Candidate / Registration Number:";
+            case "0":
+                return showNABTEBOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. New Candidate\n2. Existing Candidate\n3. Exam Registration\n4. Requirements\n5. Status\n6. Update Info\n0. Back";
+        }
+    }
+    private String handleNABTEBRegistrationFlow(String phone, String input) {
+        String nabtebFlow = (String) retrieveFromSession(phone, "nabtebFlow");
+        String currentField = (String) retrieveFromSession(phone, "nabtebRegField");
+        
+        if (input == null || input.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter " + getNABTEBFieldDisplayName(currentField) + ":";
+        }
+        String value = input.trim();
+
+        switch (nabtebFlow) {
+            case "new_candidate":
+                return handleNABTEBNewCandidate(phone, value, currentField);
+            case "existing_candidate":
+                return handleNABTEBExistingCandidate(phone, value, currentField);
+            case "exam_registration":
+                return handleNABTEBExamRegistration(phone, value, currentField);
+            case "reg_status":
+                return handleNABTEBRegStatus(phone, value, currentField);
+            case "update_info":
+                return handleNABTEBUpdateInfo(phone, value, currentField);
+            case "general_enquiry": // FIXED: added missing handler
+                return handleNABTEBGeneralEnquiry(phone, value, currentField);
+            case "find_centre":
+            case "centre_by_state":
+            case "centre_by_lga":
+            case "my_centre":
+                return handleNABTEBCentreFlow(phone, value, currentField);
+            
+            default:
+                clearNABTEBSession(phone);
+                return showNABTEBOrgMenu(phone);
+        }
+    }
+    private String handleNABTEBNewCandidate(String phone, String value, String currentField) {
+        switch (currentField) {
+            case "fullName":
+                if (!isValidName(value)) {
+                    return "CON Invalid name. Enter Full Name:";
+                }
+                saveToSession(phone, "nabtebFullName", value);
+                saveToSession(phone, "nabtebRegField", "phone");
+                return "CON Enter Phone Number:";
+                
+            case "phone":
+                if (!isValidPhoneNumber(value)) {
+                    return "CON Invalid phone. Enter Phone Number:";
+                }
+                saveToSession(phone, "nabtebPhone", value);
+                saveToSession(phone, "nabtebRegField", "dob");
+                return "CON Enter Date of Birth (DD-MM-YYYY):";
+                
+            case "dob":
+                if (!isValidDateOfBirth(value)) {
+                    return "CON Invalid date. Enter Date of Birth (DD-MM-YYYY):";
+                }
+                saveToSession(phone, "nabtebDob", value);
+                saveToSession(phone, "nabtebRegField", "gender");
+                return "CON Select Gender:\n1. Male\n2. Female";
+                
+            case "gender":
+                String gender;
+                switch (value) {
+                    case "1": gender = "MALE"; break;
+                    case "2": gender = "FEMALE"; break;
+                    default: return "CON Invalid choice.\n\nSelect Gender:\n1. Male\n2. Female";
+                }
+                saveToSession(phone, "nabtebGender", gender);
+                saveToSession(phone, "nabtebRegField", "state");
+                return "CON Enter State:";
+                
+            case "state":
+                saveToSession(phone, "nabtebState", value);
+                saveToSession(phone, "nabtebRegField", "lga");
+                return "CON Enter LGA:";
+                
+            case "lga":
+                saveToSession(phone, "nabtebLga", value);
+                saveToSession(phone, "nabtebRegField", "examType");
+                return "CON Select Examination Type:\n1. NBC\n2. NTC\n3. ANBC\n4. ANTC\n5. Others";
+                
+            case "examType":
+                String examType;
+                switch (value) {
+                    case "1": examType = "NBC"; break;
+                    case "2": examType = "NTC"; break;
+                    case "3": examType = "ANBC"; break;
+                    case "4": examType = "ANTC"; break;
+                    case "5": examType = "OTHERS"; break;
+                    default: return "CON Invalid choice.\n\nSelect Examination Type:\n1. NBC\n2. NTC\n3. ANBC\n4. ANTC\n5. Others";
+                }
+                saveToSession(phone, "nabtebExamType", examType);
+                saveToSession(phone, "nabtebRegField", "examCentre");
+                return "CON Enter / Select Examination Centre:";
+                
+            case "examCentre":
+                saveToSession(phone, "nabtebExamCentre", value);
+                saveToSession(phone, "nabtebRegField", "idNumber");
+                return "CON Enter Approved ID / Reference Number\n(Optional - enter 0 to skip):";
+                
+            case "idNumber":
+                saveToSession(phone, "nabtebIdNumber", "0".equals(value) ? null : value);
+                return saveNABTEBNewCandidate(phone);
+                
+            default:
+                return "END Invalid form state.";
+        }
+    }
+    private String saveNABTEBNewCandidate(String phone) {
+        try {
+            String refId = generateNABTEBReferenceId();
+            // TODO: Save to NabtebRegistrationRepository when ready
+            // For now, session-based mock save
+            clearNABTEBSession(phone);
+            return "END REGISTRATION REQUEST SUBMITTED\n\n" +
+                "Your NABTEB Registration\n" +
+                "Reference is: " + refId + "\n\n" +
+                "Keep this reference number safe.\n" +
+                "You will receive an SMS shortly.";
+        } catch (Exception e) {
+            System.err.println("Error saving NABTEB registration: " + e.getMessage());
+            return "END Error saving registration. Please try again.";
+        }
+    }
+    private String handleNABTEBExistingCandidate(String phone, String value, String currentField) {
+        switch (currentField) {
+            case "regNumber":
+                saveToSession(phone, "nabtebRegNumber", value);
+                saveToSession(phone, "nabtebRegField", "phone");
+                return "CON Enter Phone Number:";
+            case "phone":
+                saveToSession(phone, "nabtebPhone", value);
+                String regNo = (String) retrieveFromSession(phone, "nabtebRegNumber");
+                clearNABTEBSession(phone);
+                return "END CANDIDATE INFORMATION\n\n" +
+                    "Reg No: " + regNo + "\n" +
+                    "Status: ACTIVE\n" +
+                    "Phone: " + value + "\n\n" +
+                    "Your details have been retrieved.";
+            default:
+                return "END Invalid form state.";
+        }
+    }
+    private String handleNABTEBExamRegistration(String phone, String value, String currentField) {
+        switch (currentField) {
+            case "regNumber":
+                saveToSession(phone, "nabtebRegNumber", value);
+                saveToSession(phone, "nabtebRegField", "examType");
+                return "CON Select Examination:\n1. NBC\n2. NTC\n3. ANBC\n4. ANTC\n5. Others";
+            case "examType":
+                String examType;
+                switch (value) {
+                    case "1": examType = "NBC"; break;
+                    case "2": examType = "NTC"; break;
+                    case "3": examType = "ANBC"; break;
+                    case "4": examType = "ANTC"; break; 
+                    case "5": examType = "OTHERS"; break;
+                    default: return "CON Invalid choice. Select Examination:\n1. NBC\n2. NTC\n3. ANBC\n4. ANTC\n5. Others";
+                }
+                saveToSession(phone, "nabtebExamType", examType);
+                saveToSession(phone, "nabtebRegField", "examYear");
+                return "CON Enter Examination Year:";
+                
+            case "examYear":
+                String regNumber = (String) retrieveFromSession(phone, "nabtebRegNumber");
+                String savedexamType = (String) retrieveFromSession(phone, "nabtebExamType");
+                clearNABTEBSession(phone);
+                return "END EXAMINATION REGISTRATION\n\n" +
+                    "Reg No: " + regNumber + "\n" +
+                    "Exam Type: " + savedexamType + "\n" +
+                    "Year: " + value + "\n\n" +
+                    "Your examination registration has been\n" +
+                    "Registration confirmed.\n" +
+                    "Reference: " + generateNABTEBReferenceId();
+            default:
+                return "END Invalid form state.";
+        }
+    }
+    private String handleNABTEBRegStatus(String phone, String value, String currentField) {
+        switch (currentField) {
+            case "regNumber":
+                saveToSession(phone, "nabtebRegNumber", value);
+                saveToSession(phone, "nabtebRegField", "examYear");
+                return "CON Enter Year:";
+            case "examYear":
+                String regNo = (String) retrieveFromSession(phone, "nabtebRegNumber");
+
+                clearNABTEBSession(phone);
+                return "END REGISTRATION STATUS\n\n" +
+                    "Reg No: " + regNo + "\n" +
+                    "Year: " + value + "\n" +
+                    "Status: REGISTERED\n\n" +
+                    "You are fully registered.";
+            default:
+                return "END Invalid form state.";
+        }
+    }
+    private String handleNABTEBUpdateInfo(String phone, String value, String currentField) {
+        switch (currentField) {
+            case "regNumber":
+                saveToSession(phone, "nabtebRegNumber", value);
+                saveToSession(phone, "nabtebRegField", "updateChoice");
+                return "CON Select information to update:\n" +
+                    "1. Phone Number\n" +
+                    "2. Address\n" +
+                    "3. Personal Information\n" +
+                    "4. Other Approved Information";
+            case "updateChoice":
+                saveToSession(phone, "nabtebUpdateChoice", value);
+                saveToSession(phone, "nabtebRegField", "updateValue");
+                return "CON Enter new information:";
+            case "updateValue":
+                clearNABTEBSession(phone);
+                return "END UPDATE REQUEST SUBMITTED\n\n" +
+                    "Request Reference: " + generateNABTEBReferenceId() + "\n\n" +
+                    "Your update request has been\n" +
+                    "received and is being processed.";
+            default:
+                return "END Invalid form state.";
+        }
+    }
+    private String handleNABTEBRequestEnquiry(String choice, String phone) {
+        switch (choice) {
+            case "1": case "2": case "3": case "4": case "5": case "6":
+                saveToSession(phone, "nabtebFlow", "general_enquiry");
+                saveToSession(phone, "nabtebRegField", "enquiryText");
+                return "CON Enter your enquiry:";
+            case "7": // General Enquiry
+                saveToSession(phone, "nabtebFlow", "general_enquiry");
+                saveToSession(phone, "nabtebRegField", "enquiryText");
+                return "CON GENERAL ENQUIRY\n\nEnter your enquiry:";
+            case "0":
+                return showNABTEBOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Exam Enquiry\n2. Reg Enquiry\n3. Result Enquiry\n4. Cert Enquiry\n5. Verification Enquiry\n6. Candidate Enquiry\n7. General Enquiry\n0. Back";
+        }
+    }
+
+    private String handleNABTEBVerifyFlow(String phone, String choice) {
+        String currentSubMenu = (String) retrieveFromSession(phone, "currentSubMenu");
+        
+        if ("nabteb_verify".equals(currentSubMenu)) {
+            switch (choice) {
+                case "1": // Verify Result
+                    saveToSession(phone, "currentSubMenu", "nabteb_verify_form");
+                    saveToSession(phone, "nabtebVerifyType", "result");
+                    saveToSession(phone, "nabtebRegField", "candidateNo");
+                    return "CON VERIFY RESULT\n\nEnter Examination Number:";
+                case "2": // Verify Certificate
+                    saveToSession(phone, "currentSubMenu", "nabteb_verify_form");
+                    saveToSession(phone, "nabtebVerifyType", "certificate");
+                    saveToSession(phone, "nabtebRegField", "certNo");
+                    return "CON VERIFY CERTIFICATE\n\nEnter Certificate / Verification Number:";
+                case "3": // Check Result Status
+                    saveToSession(phone, "currentSubMenu", "nabteb_verify_form");
+                    saveToSession(phone, "nabtebVerifyType", "status");
+                    saveToSession(phone, "nabtebRegField", "candidateNo");
+                    return "CON CHECK RESULT STATUS\n\nEnter Examination Number:";
+                case "4": // Verification Guidelines
+                    saveToSession(phone, "currentSubMenu", null);
+                    return "END VERIFICATION GUIDELINES\n\n" +
+                        "1. Enter your examination number\n" +
+                        "2. Select examination type\n" +
+                        "3. Confirm your details\n" +
+                        "4. Submit for verification\n\n" +
+                        "Results are verified against\n" +
+                        "NABTEB approved records.";
+                case "0":
+                    saveToSession(phone, "currentSubMenu", null);
+                    return showNABTEBOrgMenu(phone);
+                default:
+                    return "CON Invalid choice.\n\n1. Verify Result\n2. Verify Certificate\n3. Check Status\n4. Guidelines\n0. Back";
+            }
+        }
+        
+        if ("nabteb_verify_form".equals(currentSubMenu)) {
+            String verifyType = (String) retrieveFromSession(phone, "nabtebVerifyType");
+            String currentField = (String) retrieveFromSession(phone, "nabtebRegField");
+            
+            if ("result".equals(verifyType)) {
+                if ("candidateNo".equals(currentField)) {
+                    saveToSession(phone, "nabtebCandidateNo", choice);
+                    saveToSession(phone, "nabtebRegField", "examYear");
+                    return "CON Enter Examination Year:";
+                } else if ("examYear".equals(currentField)) {
+                    saveToSession(phone, "nabtebExamYear", choice);
+                    saveToSession(phone, "nabtebRegField", "examType");
+                    return "CON Select Examination Type:\n1. NBC\n2. NTC\n3. ANBC\n4. ANTC\n5. Others";
+                } else if ("examType".equals(currentField)) { // FIXED: explicit save
+                    saveToSession(phone, "nabtebExamType", choice);
+                    saveToSession(phone, "currentSubMenu", null);
+                    saveToSession(phone, "nabtebVerifyType", null);
+                    String candNo = (String) retrieveFromSession(phone, "nabtebCandidateNo");
+                    String year = (String) retrieveFromSession(phone, "nabtebExamYear");
+                    clearNABTEBSession(phone);
+                    return "END VERIFICATION RESULT\n\n" +
+                        "Exam No: " + candNo + "\n" +
+                        "Year: " + year + "\n" +
+                        "Status: VERIFIED\n\n" +
+                        "Result is authentic and valid.";
+                }
+            }
+            
+            if ("certificate".equals(verifyType)) {
+                if ("certNo".equals(currentField)) {
+                    saveToSession(phone, "nabtebCertNo", choice);
+                    saveToSession(phone, "nabtebRegField", "candidateNo");
+                    return "CON Enter Examination Number:";
+                } else if ("candidateNo".equals(currentField)) {
+                    saveToSession(phone, "nabtebCandidateNo", choice);
+                    saveToSession(phone, "nabtebRegField", "examYear");
+                    return "CON Enter Examination Year:";
+                } else if ("examYear".equals(currentField)) { // FIXED: explicit save
+                    saveToSession(phone, "nabtebExamYear", choice);
+                    saveToSession(phone, "currentSubMenu", null);
+                    String certNo = (String) retrieveFromSession(phone, "nabtebCertNo");
+                    String candNo = (String) retrieveFromSession(phone, "nabtebCandidateNo");
+                    clearNABTEBSession(phone);
+                    return "END VERIFICATION RESPONSE\n\n" +
+                        "Cert No: " + certNo + "\n" +
+                        "Exam No: " + candNo + "\n" +
+                        "Year: " + choice + "\n" +
+                        "Status: VALID CERTIFICATE\n\n" +
+                        "Certificate is authentic.";
+                }
+            }
+            
+            if ("status".equals(verifyType)) {
+                if ("candidateNo".equals(currentField)) {
+                    saveToSession(phone, "nabtebCandidateNo", choice);
+                    saveToSession(phone, "nabtebRegField", "examYear");
+                    return "CON Enter Examination Year:";
+                } else if ("examYear".equals(currentField)) { // FIXED: explicit save
+                    saveToSession(phone, "nabtebExamYear", choice);
+                    saveToSession(phone, "currentSubMenu", null);
+                    String candNo = (String) retrieveFromSession(phone, "nabtebCandidateNo");
+                    clearNABTEBSession(phone);
+                    return "END RESULT STATUS\n\n" +
+                        "Exam No: " + candNo + "\n" +
+                        "Year: " + choice + "\n" +
+                        "Status: RELEASED\n\n" +
+                        "Your result is available.";
+                }
+            }
+        }
+        
+        return "END Invalid verification state.";
+    }
+    private String handleNABTEBGeneralEnquiry(String phone, String value, String currentField) {
+        if ("enquiryText".equals(currentField)) {
+            if (value == null || value.trim().isEmpty()) {
+                return "CON Field cannot be empty. Please enter your enquiry:";
+            }
+            clearNABTEBSession(phone);
+            return "END YOUR ENQUIRY HAS BEEN RECEIVED.\n\n" +
+                "Reference Number: " + generateNABTEBReferenceId() + "\n\n" +
+                "We will respond shortly.";
+        }
+        return "END Invalid enquiry state.";
+    }
+    private String handleNABTEBCentreFlow(String phone, String value, String currentField) {
+        switch (currentField) {
+            case "state":
+                saveToSession(phone, "nabtebState", value);
+                clearNABTEBSession(phone);
+                return "END AVAILABLE NABTEB CENTRES\n\n" +
+                    "State: " + value + "\n\n" +
+                    "1. City Model School\n" +
+                    "   Code: 12345\n" +
+                    "   123 Main Road\n\n" +
+                    "2. Government College\n" +
+                    "   Code: 12346\n" +
+                    "   456 Park Avenue\n\n" +
+                    "Contact state office for more.";
+            case "lga":
+                saveToSession(phone, "nabtebLga", value);
+                clearNABTEBSession(phone);
+                return "END AVAILABLE NABTEB CENTRES\n\n" +
+                    "LGA: " + value + "\n\n" +
+                    "1. Community High School\n" +
+                    "   Code: 22345\n" +
+                    "   78 Local Street\n\n" +
+                    "Contact state office for more.";
+            case "regNumber":
+                saveToSession(phone, "nabtebRegNumber", value);
+                clearNABTEBSession(phone);
+                return "END YOUR ASSIGNED CENTRE\n\n" +
+                    "Candidate: " + value + "\n" +
+                    "Centre: City Model School\n" +
+                    "Code: 12345\n" +
+                    "Address: 123 Main Road\n\n" +
+                    "Report any discrepancy.";
+            default:
+                clearNABTEBSession(phone);
+                return showNABTEBOrgMenu(phone);
+        }
+    }
+    private String handleNABTEBExamCentre(String choice, String phone) {
+        switch (choice) {
+            case "1": // Find Centre
+                saveToSession(phone, "nabtebFlow", "find_centre");
+                saveToSession(phone, "nabtebRegField", "state");
+                return "CON FIND CENTRE\n\nEnter State:";
+            case "2": // Search by State
+                saveToSession(phone, "nabtebFlow", "centre_by_state");
+                saveToSession(phone, "nabtebRegField", "state");
+                return "CON SEARCH BY STATE\n\nEnter State:";
+            case "3": // Search by LGA
+                saveToSession(phone, "nabtebFlow", "centre_by_lga");
+                saveToSession(phone, "nabtebRegField", "lga");
+                return "CON SEARCH BY LGA\n\nEnter LGA:";
+            case "4": // My Assigned Centre
+                saveToSession(phone, "nabtebFlow", "my_centre");
+                saveToSession(phone, "nabtebRegField", "regNumber");
+                return "CON MY ASSIGNED CENTRE\n\nEnter Candidate / Registration Number:";
+            case "5": // Centre Information
+                return "END CENTRE INFORMATION\n\n" +
+                    "NABTEB centres are accredited\n" +
+                    "examination venues across all\n" +
+                    "states in Nigeria.\n\n" +
+                    "Each centre has a unique code\n" +
+                    "and is inspected regularly.";
+            case "0":
+                return showNABTEBOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Find Centre\n2. By State\n3. By LGA\n4. My Centre\n5. Info\n0. Back";
+        }
+    }
+    private String handleNABTEBGuidelines(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END REGISTRATION PROCEDURE\n\n" +
+                    "1. Obtain registration form\n" +
+                    "2. Fill all required fields\n" +
+                    "3. Attach passport photos\n" +
+                    "4. Pay registration fees\n" +
+                    "5. Submit at accredited centre\n" +
+                    "6. Collect acknowledgement slip";
+            case "2":
+                return "END EXAMINATION PROCEDURE\n\n" +
+                    "1. Arrive 30 mins early\n" +
+                    "2. Bring exam docket and ID\n" +
+                    "3. No electronic devices\n" +
+                    "4. Follow invigilator instructions\n" +
+                    "5. Sign attendance register";
+            case "3":
+                return "END CANDIDATE REQUIREMENTS\n\n" +
+                    "- Valid ID card\n" +
+                    "- Recent passport photos\n" +
+                    "- Birth certificate\n" +
+                    "- School testimonial\n" +
+                    "- Registration fee receipt";
+            case "4":
+                return "END EXAMINATION RULES\n\n" +
+                    "1. No malpractice\n" +
+                    "2. No communication\n" +
+                    "3. No unauthorized materials\n" +
+                    "4. Obey time limits\n" +
+                    "5. Violation leads to disqualification";
+            case "5":
+                return "END RESULT PROCEDURE\n\n" +
+                    "Results released 60 days after\n" +
+                    "last exam paper.\n\n" +
+                    "Check via:\n" +
+                    "- NABTEB website\n" +
+                    "- SMS service\n" +
+                    "- Accredited centres";
+            case "6":
+                return "END CERTIFICATE PROCEDURE\n\n" +
+                    "Certificates available 90 days\n" +
+                    "after result release.\n\n" +
+                    "Collect at:\n" +
+                    "- State offices\n" +
+                    "- Accredited collection centres";
+            case "7":
+                return "END VERIFICATION PROCEDURE\n\n" +
+                    "1. Enter exam number\n" +
+                    "2. Select exam type and year\n" +
+                    "3. Submit for verification\n" +
+                    "4. Receive verification response";
+            case "8":
+                return "END CENTRE GUIDELINES\n\n" +
+                    "- Centres must be accredited\n" +
+                    "- Adequate seating\n" +
+                    "- Security measures\n" +
+                    "- Qualified invigilators\n" +
+                    "- Proper record keeping";
+            case "9":
+                return "END PAYMENT PROCEDURE\n\n" +
+                    "1. Generate RRR at nabteb.gov.ng\n" +
+                    "2. Pay at bank or online\n" +
+                    "3. Keep payment receipt\n" +
+                    "4. Attach to registration form";
+            case "0":
+                return showNABTEBOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Registration\n2. Examination\n3. Requirements\n4. Rules\n5. Result\n6. Certificate\n7. Verification\n8. Centre\n9. Payment\n0. Back";
+        }
+    }
+    private String handleNABTEBFAQs(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END REGISTRATION FAQs\n\n" +
+                    "Q: When does registration start?\n" +
+                    "A: Usually January/February.\n\n" +
+                    "Q: Can I register online?\n" +
+                    "A: Yes, via approved centres.";
+            case "2":
+                return "END EXAMINATION FAQs\n\n" +
+                    "Q: What should I bring?\n" +
+                    "A: Docket and valid ID.\n\n" +
+                    "Q: Can I change exam centre?\n" +
+                    "A: No, after final submission.";
+            case "3":
+                return "END RESULT FAQs\n\n" +
+                    "Q: When are results out?\n" +
+                    "A: 60 days after last paper.\n\n" +
+                    "Q: How do I check?\n" +
+                    "A: Dial *7447# → Verify.";
+            case "4":
+                return "END CERTIFICATE FAQs\n\n" +
+                    "Q: When to collect?\n" +
+                    "A: 90 days after results.\n\n" +
+                    "Q: Can someone collect for me?\n" +
+                    "A: Yes, with authorization.";
+            case "5":
+                return "END VERIFICATION FAQs\n\n" +
+                    "Q: Is online verification free?\n" +
+                    "A: Yes, via this service.\n\n" +
+                    "Q: How long does it take?\n" +
+                    "A: Instant response.";
+            case "6":
+                return "END CENTRE FAQs\n\n" +
+                    "Q: How to find my centre?\n" +
+                    "A: Use Find Centre menu.\n\n" +
+                    "Q: What if centre is far?\n" +
+                    "A: Contact state office.";
+            case "7":
+                return "END PAYMENT FAQs\n\n" +
+                    "Q: How much is registration?\n" +
+                    "A: Check current fee schedule.\n\n" +
+                    "Q: Refund policy?\n" +
+                    "A: No refunds after processing.";
+            case "8":
+                return "END IMPORTANT LINKS\n\n" +
+                    "www.nabteb.gov.ng\n" +
+                    "support@nabteb.gov.ng\n" +
+                    "NABTEB State Offices\n" +
+                    "Accredited Centres";
+            case "0":
+                return showNABTEBOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Reg FAQs\n2. Exam FAQs\n3. Result FAQs\n4. Cert FAQs\n5. Verify FAQs\n6. Centre FAQs\n7. Payment FAQs\n8. Links\n0. Back";
+        }
+    }
+    private String handleNABTEBTips(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END EXAMINATION UPDATES\n\n" +
+                    "May/June 2026 NBC/NTC exam\n" +
+                    "timetable now available.\n\n" +
+                    "Check www.nabteb.gov.ng";
+            case "2":
+                return "END REGISTRATION UPDATES\n\n" +
+                    "Registration for 2026 exams\n" +
+                    "closes March 31, 2026.\n\n" +
+                    "Late registration attracts\n" +
+                    "additional fees.";
+            case "3":
+                return "END RESULT UPDATES\n\n" +
+                    "Nov/Dec 2025 results have\n" +
+                    "been released.\n\n" +
+                    "Candidates can now verify\n" +
+                    "via this service.";
+            case "4":
+                return "END TIMETABLE UPDATES\n\n" +
+                    "Updated exam timetable\n" +
+                    "published.\n\n" +
+                    "Download from:\n" +
+                    "www.nabteb.gov.ng/timetable";
+            case "5":
+                return "END REGISTRATION DEADLINES\n\n" +
+                    "Normal: March 31, 2026\n" +
+                    "Late: April 30, 2026\n" +
+                    "Very Late: May 15, 2026\n\n" +
+                    "Register early to avoid\n" +
+                    "extra charges.";
+            case "6":
+                return "END IMPORTANT NOTICES\n\n" +
+                    "All candidates must use\n" +
+                    "approved exam centres only.\n\n" +
+                    "Fake centres will be\n" +
+                    "prosecuted.";
+            case "7":
+                return "END CANDIDATE TIPS\n\n" +
+                    "- Study past questions\n" +
+                    "- Arrive early on exam day\n" +
+                    "- Read instructions carefully\n" +
+                    "- Manage your time wisely\n" +
+                    "- Stay calm and focused";
+            case "0":
+                return showNABTEBOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Exam Updates\n2. Reg Updates\n3. Result Updates\n4. Timetable\n5. Deadlines\n6. Notices\n7. Tips\n0. Back";
+        }
+    }
+    private String handleNABTEBAccount(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END MY REGISTRATION\n\n" +
+                    "Check your registration\n" +
+                    "status and history.\n\n" +
+                    "Feature coming soon.";
+            case "2":
+                return "END MY EXAMINATION\n\n" +
+                    "View registered exams\n" +
+                    "and schedules.\n\n" +
+                    "Feature coming soon.";
+            case "3":
+                return "END MY CENTRE\n\n" +
+                    "View assigned exam\n" +
+                    "centre details.\n\n" +
+                    "Feature coming soon.";
+            case "4":
+                return "END MY RESULT STATUS\n\n" +
+                    "Check result release\n" +
+                    "status.\n\n" +
+                    "Feature coming soon.";
+            case "5":
+                return "END MY REQUESTS\n\n" +
+                    "View pending requests\n" +
+                    "and enquiries.\n\n" +
+                    "Feature coming soon.";
+            case "6":
+                return "END MY NOTIFICATIONS\n\n" +
+                    "No new notifications.\n\n" +
+                    "Feature coming soon.";
+            case "7":
+                return "END UPDATE PROFILE\n\n" +
+                    "Profile update coming soon.\n" +
+                    "Visit NABTEB office with ID.";
+            case "0":
+                return showNABTEBOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. My Registration\n2. My Exam\n3. My Centre\n4. Result Status\n5. My Requests\n6. Notifications\n7. Update Profile\n0. Back";
+        }
+    }
+    private String handleNABTEBMoreInfo(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END TECHNICAL EDUCATION\n\n" +
+                    "NABTEB offers technical\n" +
+                    "certifications in:\n" +
+                    "- Engineering trades\n" +
+                    "- Construction\n" +
+                    "- ICT and electronics\n" +
+                    "- Agriculture";
+            case "2":
+                return "END BUSINESS EDUCATION\n\n" +
+                    "Business certifications:\n" +
+                    "- Accounting\n" +
+                    "- Marketing\n" +
+                    "- Office management\n" +
+                    "- Secretarial studies";
+            case "3":
+                return "END VOCATIONAL INFORMATION\n\n" +
+                    "Vocational training programs\n" +
+                    "available at accredited\n" +
+                    "centres nationwide.\n\n" +
+                    "Contact state office for\n" +
+                    "available courses.";
+            case "4":
+                return "END PROGRAMMES\n\n" +
+                    "1. NBC/NTC\n" +
+                    "2. ANBC/ANTC\n" +
+                    "3. Modular trades\n" +
+                    "4. Common entrance\n" +
+                    "5. Special exams";
+            case "5":
+                return "END PUBLICATIONS\n\n" +
+                    "Available publications:\n" +
+                    "- Syllabus\n" +
+                    "- Past questions\n" +
+                    "- Regulations\n" +
+                    "- Information bulletins";
+            case "6":
+                return "END PUBLIC NOTICES\n\n" +
+                    "All candidates should verify\n" +
+                    "their registration details\n" +
+                    "before exam commencement.\n\n" +
+                    "Report discrepancies immediately.";
+            case "7":
+                return "END OTHER INFORMATION\n\n" +
+                    "For more details:\n" +
+                    "www.nabteb.gov.ng\n" +
+                    "info@nabteb.gov.ng\n" +
+                    "State offices nationwide.";
+            case "0":
+                return showNABTEBOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Technical Edu\n2. Business Edu\n3. Vocational\n4. Programmes\n5. Publications\n6. Notices\n7. Other Info\n0. Back";
+        }
+    }
+    private String showNABTEBOrgMenu(String phone) {
+        Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
+        if (selectedOrgId != null) {
+            Optional<Organization> orgOpt = organizationRepository.findById(selectedOrgId);
+            if (orgOpt.isPresent()) {
+                return showorgmenu(orgOpt.get());
+            }
+        }
+        clearNavigationSession(phone);
+        return HandleLevel1(phone, new String[0], false);
+    }
+    private String generateNABTEBReferenceId() {
+        int random = (int) (Math.random() * 900000) + 100000;
+        return "NABTEB-" + random;
+    }
+    private String getNABTEBFieldDisplayName(String field) {
+        switch (field) {
+            case "fullName": return "Full Name";
+            case "phone": return "Phone Number";
+            case "dob": return "Date of Birth";
+            case "gender": return "Gender";
+            case "state": return "State";
+            case "lga": return "LGA";
+            case "examType": return "Examination Type";
+            case "examCentre": return "Examination Centre";
+            case "idNumber": return "ID Number";
+            case "regNumber": return "Registration Number";
+            case "examYear": return "Examination Year";
+            case "enquiryText": return "your enquiry";
+            default: return "the required information";
+        }
+    }
+    private void clearNABTEBSession(String phone) {
+        saveToSession(phone, "nabtebFlow", null);
+        saveToSession(phone, "nabtebSubMenu", null);
+        saveToSession(phone, "nabtebRegField", null);
+        saveToSession(phone, "nabtebRegType", null);
+        saveToSession(phone, "nabtebFullName", null);
+        saveToSession(phone, "nabtebPhone", null);
+        saveToSession(phone, "nabtebDob", null);
+        saveToSession(phone, "nabtebGender", null);
+        saveToSession(phone, "nabtebState", null);
+        saveToSession(phone, "nabtebLga", null);
+        saveToSession(phone, "nabtebExamType", null);
+        saveToSession(phone, "nabtebExamCentre", null);
+        saveToSession(phone, "nabtebIdNumber", null);
+        saveToSession(phone, "nabtebRegNumber", null);
+        saveToSession(phone, "nabtebExamYear", null);
+        saveToSession(phone, "nabtebVerifyType", null);
+        saveToSession(phone, "nabtebCandidateNo", null);
+        saveToSession(phone, "nabtebCertNo", null);
+        saveToSession(phone, "nabtebUpdateChoice", null);
+        saveToSession(phone, "nabtebEnquiryType", null); // FIXED: clear new key
+    }
+
     private String handleMoreResults(String phone) {
         String searchTerm = (String) retrieveFromSession(phone, "searchTerm");
         Integer currentPage = (Integer) retrieveFromSession(phone, "currentPage");
@@ -1633,6 +2648,10 @@ public class ussdcontroller {
             "4. Application Status\n" +
             "5. Compliance Status\n" +
             "0. Back";
+    }   
+    private boolean isNABTEB(Organization org) {
+        return (org.getInitials() != null && org.getInitials().toUpperCase().contains("NABTEB"))
+            || org.getName().toUpperCase().contains("NATIONAL BUSINESS");
     }
 
     
@@ -4098,5 +5117,7 @@ public class ussdcontroller {
                     "0. Back";
         }
     }
+    
+   
 }
 
