@@ -81,7 +81,7 @@ public class ussdcontroller {
 
     private static final String[] MINISTERIAL_ACHIEVEMENTS = {
         "END MINISTERIAL ACHIEVEMENTS\n\n" +
-        "Ministry of Agriculture & Food\n" +
+        "Ministry of Agriculture and Food\n" +
         "Security\n" +
         "Driving food security through\n" +
         "mechanized farming, supporting\n" +
@@ -89,7 +89,7 @@ public class ussdcontroller {
         "sustainable agricultural value\n" +
         "chains.",
 
-        "END Ministry of Aviation &\n" +
+        "END Ministry of Aviation and\n" +
         "Aerospace Development\n" +
         "Revitalizing the aviation sector,\n" +
         "improving airport infrastructure,\n" +
@@ -200,7 +200,7 @@ public class ussdcontroller {
             "menuShown", "lastInteraction", "awaitingSearchTerm", // Added for menu tracking
             "ffsRegFlow", "ffsRegType", "ffsRegField",
             "ffsRegName", "ffsRegAddress", "ffsRegState",
-            "ffsRegOccupation", "ffsRegOrg","cacRegFlow", "cacRegType", "cacRegField",
+            "ffsRegOccupation", "ffsRegOrg", "cacRegType", "cacRegField",
             "cacRegName", "cacRegEmail", "cacRegState", "cacRegOccupation",
             "cacVerifyType","cbmFlow", "cbmField", "cbmFirstName", "cbmLastName", "cbmEmail", 
             "cbmVin", "cbmGender", "cbmOrgName", "cbmSupportType", "cbmSpread", "cbmReferral",
@@ -209,7 +209,11 @@ public class ussdcontroller {
             "nabtebDob", "nabtebGender", "nabtebState",
             "nabtebLga", "nabtebExamType", "nabtebExamCentre",
             "nabtebIdNumber", "nabtebRegNumber", "nabtebExamYear",
-            "nabtebVerifyType", "nabtebCandidateNo", "nabtebCertNo"
+            "nabtebVerifyType", "nabtebCandidateNo", "nabtebCertNo",
+            "cacRegFlow", "cacRegType", "cacRegField",
+            "cacRegName", "cacRegBusinessName", "cacRegRcNumber",
+            "cacRegEmail", "cacRegState", "cacRegOccupation",
+            "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
         };
 
         // FFS registration keys can be added here if needed
@@ -574,7 +578,7 @@ public class ussdcontroller {
                 saveToSession(phone, "cbmFlow", null);
                 return "END GRAND PATRON\n\n" +
                     "Asiwaju Bola Ahmed Tinubu, GCFR\n" +
-                    "President & Commander-in-Chief,\n" +
+                    "President and Commander-in-Chief,\n" +
                     "Federal Republic of Nigeria.\n\n" +
                     "Born March 29, 1952, Asiwaju Bola\n" +
                     "Ahmed Tinubu ranks among Nigeria's\n" +
@@ -631,13 +635,13 @@ public class ussdcontroller {
             case "2":
                 saveToSession(phone, "cbmFlow", null);
                 return "END THREE PILLARS OF WORK\n\n" +
-                    "1. Human Dignity & Rights\n" +
+                    "1. Human Dignity and Rights\n" +
                     "Advocacy for fairness and equal\n" +
                     "treatment for every citizen.\n\n" +
                     "2. Sustainable Development\n" +
                     "Long-term solutions for economic\n" +
                     "growth and resource management.\n\n" +
-                    "3. Civic Participation & Leadership\n" +
+                    "3. Civic Participation and Leadership\n" +
                     "Building informed, responsible\n" +
                     "citizens and leaders.";
 
@@ -1132,16 +1136,32 @@ public class ussdcontroller {
                     || orgofchoice.getName().toUpperCase().contains("CORPORATE AFFAIRS");
 
         boolean isNABTEB = orgofchoice.getName().toUpperCase().contains("NABTEB")
+
                 || orgofchoice.getName().toUpperCase().contains("NATIONAL BUSINESS");
+
+        if (isCAC) {
+            return "CON " + orgofchoice.getName() + "\n" +
+                "1. Register\n" +
+                "2. Search / Verify\n" +
+                "3. Check Status\n" +
+                "4. Compliance\n" +
+                "5. Requests\n" +
+                "6. Fees and Guidelines\n" +
+                "7. Find CAC\n" +
+                "8. Notifications\n" +
+                "9. About CAC\n" +
+                "10. Account / Profile\n" +
+                "0. Main Menu";
+        }
         
         StringBuilder menu = new StringBuilder("CON " + orgofchoice.getName() + "\n" +
                 "1. Register/Verify\n" +
                 "2. Request\n" +
                 "3. Report\n" +
                 "4. Guidelines\n" +
-                "5. FAQs & Links\n" +
+                "5. FAQs and Links\n" +
                 "6. Call Lines\n" +
-                "7. Tips & Updates\n" +
+                "7. Tips and Updates\n" +
                 "8. About\n" +
                 "9. More Info\n");
         
@@ -1149,11 +1169,11 @@ public class ussdcontroller {
             menu.append("10. Account / Profile\n");
         }
         
-        if(isCAC) {
-            menu.append("11. Contact CAC\n");
-            menu.append("12. About CAC\n");
-            menu.append("13. Account/Profile\n");
-        }
+        // if(isCAC) {
+        //     menu.append("11. Contact CAC\n");
+        //     menu.append("12. About CAC\n");
+        //     menu.append("13. Account/Profile\n");
+        // }
 
         if (isNABTEB) {
             menu.append("10. Account / Profile\n");
@@ -1296,12 +1316,8 @@ public class ussdcontroller {
                         "1. Register\n" +
                         "2. Verify\n" +
                         "0. Back";
-                    } else if (org.getName().toUpperCase().contains("CAC") || org.getName().toUpperCase().contains("CORPORATE AFFAIRS")) {
-                        saveToSession(phone, "currentSubMenu", "cac_register_verify");
-                        return "CON Register / Verify\n\n" +
-                            "1. Register\n" +
-                            "2. Verify\n" +
-                            "0. Back";
+                    } else if (isCac(org)) {
+                        return showCACRegisterSubMenu(phone);
                     
                     
                     } else if (isNABTEB(org)) {
@@ -1338,7 +1354,9 @@ public class ussdcontroller {
                         "6. Candidate Enquiry\n" +
                         "7. General Enquiry\n" +
                         "0. Back";
-                }  else {
+                } else if (isCac(org)) {
+                    return showCACVerifySubMenu(phone);
+                } else {
                 return "CON Request:\nThis service is coming soon.\n\n0. Back";
             }
                 
@@ -1388,8 +1406,17 @@ public class ussdcontroller {
                         "4. My Assigned Centre\n" +
                         "5. Centre Information\n" +
                         "0. Back";
-                } else {
-                    return "CON Guidelines & Procedures:\nNot available at this time.\n\n0. Back";
+                } else if (isCac(org)) {
+                   saveToSession(phone, "currentSubMenu", "cac_compliance");
+                    return "CON COMPLIANCE\n\n" +
+                        "1. Annual Returns\n" +
+                        "2. Due Date\n" +
+                        "3. Compliance Status\n" +
+                        "4. Reminders\n" +
+                        "0. Back";
+                }
+                else {
+                    return "CON Guidelines and Procedures:\nNot available at this time.\n\n0. Back";
                 }
                 
             case "5": // FAQs/Links
@@ -1415,7 +1442,16 @@ public class ussdcontroller {
                         "8. Centre Guidelines\n" +
                         "9. Payment Procedure\n" +
                         "0. Back";
-                } else {
+                } else if (isCac(org)) {
+                    saveToSession(phone, "currentSubMenu", "cac_requests");
+                    return "CON REQUESTS\n\n" +
+                        "1. Information\n" +
+                        "2. Complaint\n" +
+                        "3. Callback\n" +
+                        "4. Support\n" +
+                        "0. Back";
+                }
+                else {
                     return "CON FAQs/Links:\nNot available at this time.\n\n0. Back";
                 }
                 
@@ -1440,7 +1476,16 @@ public class ussdcontroller {
                         "7. Payment FAQs\n" +
                         "8. Important Links\n" +
                         "0. Back";
-                } else {
+                } else if (isCac(org)) {
+                    saveToSession(phone, "currentSubMenu", "cac_fees_guidelines");
+                    return "CON FEES and GUIDELINES\n\n" +
+                        "1. Fees\n" +
+                        "2. Procedures\n" +
+                        "3. Requirements\n" +
+                        "4. FAQs\n" +
+                        "0. Back";
+                }
+                else {
                     return "CON Call Lines:\n" + 
                             (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available") +
                             "\n\n0. Back";
@@ -1449,7 +1494,7 @@ public class ussdcontroller {
             case "7": // Tips/Updates
                 if (org.getName().toUpperCase().contains("FIRE") || org.getName().toUpperCase().contains("FEDERAL FIRE SERVICE") || org.getName().toUpperCase().contains("FFS")) {
                     saveToSession(phone, "currentSubMenu", "alerts");
-                    return "CON Alerts & Updates\n\n" +
+                    return "CON Alerts and Updates\n\n" +
                         "1. Fire Safety Tips\n" +
                         "2. Seasonal Fire Warnings\n" +
                         "3. Harmattan Fire Advisories\n" +
@@ -1459,7 +1504,7 @@ public class ussdcontroller {
                         "0. Back";
                 } else if (isNABTEB(org)) {
                     saveToSession(phone, "currentSubMenu", "nabteb_updates");
-                    return "CON Alerts & Updates\n\n" +
+                    return "CON Alerts and Updates\n\n" +
                         "1. Examination Updates\n" +
                         "2. Registration Updates\n" +
                         "3. Result Updates\n" +
@@ -1467,6 +1512,13 @@ public class ussdcontroller {
                         "5. Verification Updates\n" +
                         "6. Centre Updates\n" +
                         "7. Payment Updates\n" +
+                        "0. Back";
+                } else if (isCac(org)) {
+                    saveToSession(phone, "currentSubMenu", "cac_find_cac");
+                    return "CON FIND CAC\n\n" +
+                        "1. Offices\n" +
+                        "2. Contacts\n" +
+                        "3. Service Locations\n" +
                         "0. Back";
                 }
                 else {
@@ -1495,7 +1547,15 @@ public class ussdcontroller {
                         "6. Important Notices\n" +
                         "7. Candidate Tips\n" +
                         "0. Back";
-                } else {
+                } else if (isCac(org)) {
+                    saveToSession(phone, "currentSubMenu", "cac_notifications");
+                    return "CON NOTIFICATIONS\n\n" +
+                        "1. Application Alerts\n" +
+                        "2. Compliance Alerts\n" +
+                        "3. CAC Updates\n" +
+                        "0. Back";
+                }
+                else {
                     return "CON About " + org.getName() + ":\n" +
                             (org.getDescription() != null ? org.getDescription() : "Not available") +
                             "\n\nAddress: " + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") +
@@ -1522,6 +1582,11 @@ public class ussdcontroller {
                         "ANTC and other approved\n" +
                         "assessments in business and\n" +
                         "technical education.";
+                } else if (isCac(org)) {
+                    return "END ABOUT CAC\n\n" +
+                        (org.getDescription() != null ? org.getDescription() : "Corporate Affairs Commission of Nigeria — the federal body responsible for business registration and regulation.") +
+                        "\n\nAddress: " + (org.getContactAddress() != null ? org.getContactAddress() : "Not available") +
+                        "\nPhone: " + (org.getContactTelephone() != null ? org.getContactTelephone() : "Not available");
                 }
                 else {
                     return showMoreOptions(org, phone);
@@ -1548,7 +1613,14 @@ public class ussdcontroller {
                         "6. My Notifications\n" +
                         "7. Update Profile\n" +
                         "0. Back";
-                }
+                } else if (isCac(org)) {
+                    saveToSession(phone, "currentSubMenu", "cac_account_profile");
+                    return "CON ACCOUNT / PROFILE\n\n" +
+                        "1. My Registrations\n" +
+                        "2. Notification Preferences\n" +
+                        "3. Update Profile\n" +
+                        "0. Back";
+}
                 else {
                     return "CON Account:\nNot available for this organization.\n\n0. Back";
                 }
@@ -1691,6 +1763,37 @@ public class ussdcontroller {
             return checkCACStatusByReference(choice);
         }
 
+        if ("cac_compliance".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleCACCompliance(choice, phone);
+        }
+        if ("cac_annual_returns_form".equals(currentSubMenu)) {
+            return handleCACAnnualReturnsForm(phone, choice);
+        }
+        if ("cac_requests".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleCACRequestsMenu(choice, phone);
+        }
+        if ("cac_requests_form".equals(currentSubMenu)) {
+            return handleCACRequestsForm(phone, choice);
+        }
+        if ("cac_fees_guidelines".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleCACFeesGuidelines(choice, phone);
+        }
+        if ("cac_find_cac".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleCACFindCAC(choice, phone, org);
+        }
+        if ("cac_notifications".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleCACNotifications(choice, phone);
+        }
+        if ("cac_account_profile".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            return handleCACAccountProfile(choice, phone);
+        }
+
         // NABTEB registration/verification flows
         String nabtebFlow = (String) retrieveFromSession(phone, "nabtebFlow");
         if (nabtebFlow != null) {
@@ -1764,6 +1867,148 @@ public class ussdcontroller {
             "Status: " + (reg.getStatus() != null ? reg.getStatus() : "PENDING") + "\n" +
             "Ref: " + reg.getReferenceId() + "\n" +
             "Submitted: " + reg.getCreatedAt().toLocalDate();
+    }
+    private String handleCACCompliance(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                saveToSession(phone, "currentSubMenu", "cac_annual_returns_form");
+                saveToSession(phone, "cacARField", "rcNumber");
+                return "CON ANNUAL RETURNS FILING\n\nEnter RC Number:";
+            case "2":
+                return "END DUE DATE\n\nAnnual returns are typically due\nwithin 42 days after your AGM,\nor by June 30 if no AGM was held.\n\nCheck your CAC portal for your\nexact due date.";
+            case "3":
+                return "END COMPLIANCE STATUS\n\nThis checks your company's\ncompliance status against CAC\nrecords.\n\nConnects to CAC's backend —\ncoming soon on this pilot.";
+            case "4":
+                return "END REMINDERS\n\nNo reminders currently set.\n\nReminder scheduling connects to\nCAC's backend — coming soon.";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Annual Returns\n2. Due Date\n3. Compliance Status\n4. Reminders\n0. Back";
+        }
+    }
+    private String handleCACAnnualReturnsForm(String phone, String input) {
+        String field = (String) retrieveFromSession(phone, "cacARField");
+        if (input == null || input.trim().isEmpty()) {
+            return "CON Field cannot be empty. Please enter RC Number:";
+        }
+        if ("rcNumber".equals(field)) {
+            saveToSession(phone, "cacARRcNumber", input.trim());
+            saveToSession(phone, "cacARField", "confirm");
+            return "CON File Annual Returns for RC Number: " + input.trim() + "?\n\n1. Confirm and Submit\n0. Cancel";
+        }
+        if ("confirm".equals(field)) {
+            saveToSession(phone, "currentSubMenu", null);
+            saveToSession(phone, "cacARField", null);
+            String rcNumber = (String) retrieveFromSession(phone, "cacARRcNumber");
+            saveToSession(phone, "cacARRcNumber", null);
+            if ("1".equals(input.trim())) {
+                String refId = "CAC-AR-" + ((int) (Math.random() * 9000) + 1000);
+                return "END ANNUAL RETURNS SUBMITTED\n\n" +
+                    "RC Number: " + rcNumber + "\n" +
+                    "Ref: " + refId + "\n\n" +
+                    "This demo simulates the filing\nrequest. In production this posts\ndirectly to the CAC API.";
+            }
+            return "END Annual Returns filing cancelled.";
+        }
+        saveToSession(phone, "currentSubMenu", null);
+        return showFFSOrgMenu(phone);
+    }
+    private String handleCACRequestsMenu(String choice, String phone) {
+        switch (choice) {
+            case "1": case "2": case "3": case "4":
+                saveToSession(phone, "currentSubMenu", "cac_requests_form");
+                saveToSession(phone, "cacRequestType", choice);
+                return "CON Enter your message:";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Information\n2. Complaint\n3. Callback\n4. Support\n0. Back";
+        }
+    }
+    private String handleCACRequestsForm(String phone, String message) {
+        saveToSession(phone, "currentSubMenu", null);
+        String type = (String) retrieveFromSession(phone, "cacRequestType");
+        saveToSession(phone, "cacRequestType", null);
+        if (message == null || message.trim().isEmpty()) {
+            return "END Request not submitted — no message provided.";
+        }
+        String refId = "CAC-REQ-" + ((int) (Math.random() * 9000) + 1000);
+        return "END Your " + getCACRequestTypeDisplay(type) + " request has been\nreceived.\n\nRef: " + refId + "\nWe will respond shortly.";
+    }
+    private String getCACRequestTypeDisplay(String type) {
+        switch (type) {
+            case "1": return "Information";
+            case "2": return "Complaint";
+            case "3": return "Callback";
+            case "4": return "Support";
+            default: return "General";
+        }
+    }
+    private String handleCACFeesGuidelines(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END FEES\n\nBusiness Name Registration: N10,000\nCompany Registration: from N20,000\nExact fees depend on share\ncapital and category.\n\nCheck CAC's portal for the full schedule.";
+            case "2":
+                return "END PROCEDURES\n\n1. Search name availability\n2. Complete registration form\n3. Submit required documents\n4. Pay fees\n5. Receive certificate";
+            case "3":
+                return "END REQUIREMENTS\n\n- Valid ID\n- Passport photograph\n- Proposed business/company name\n- Registered address\n- Means of identification for all\n  proprietors/directors";
+            case "4":
+                return "END FAQs\n\nQ: How long does registration take?\nA: Typically 24–48 hours once\ndocuments are complete.\n\nQ: Can I register online?\nA: Yes, via CAC's portal or this\nUSSD service.";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Fees\n2. Procedures\n3. Requirements\n4. FAQs\n0. Back";
+        }
+    }
+    private String handleCACFindCAC(String choice, String phone, Organization org) {
+        switch (choice) {
+            case "1":
+                return "END CAC OFFICES\n\nHeadquarters: Abuja\nZonal offices in Lagos, Kano,\nPort Harcourt, Enugu, and other\nstate capitals.\n\nFind your nearest office at\nwww.cac.gov.ng";
+            case "2":
+                return "END CONTACTS\n\n" +
+                    (org.getContactTelephone() != null ? "Phone: " + org.getContactTelephone() + "\n" : "") +
+                    (org.getContactAddress() != null ? "Address: " + org.getContactAddress() : "Contact details not available");
+            case "3":
+                return "END SERVICE LOCATIONS\n\nRegistration and verification\nservices are available at all CAC\nstate offices and accredited\nagent locations nationwide.";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Offices\n2. Contacts\n3. Service Locations\n0. Back";
+        }
+    }
+    private String handleCACNotifications(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                return "END APPLICATION ALERTS\n\nNo active application alerts.\n\nYou'll be notified here once\nyour registration status changes.";
+            case "2":
+                return "END COMPLIANCE ALERTS\n\nNo compliance alerts at this time.";
+            case "3":
+                return "END CAC UPDATES\n\nNo new updates from CAC.\n\nCheck back later or visit\nwww.cac.gov.ng";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. Application Alerts\n2. Compliance Alerts\n3. CAC Updates\n0. Back";
+        }
+    }
+    private String handleCACAccountProfile(String choice, String phone) {
+        switch (choice) {
+            case "1":
+                List<CacRegistration> regs = cacRegistrationRepository.findAllByPhoneNumberOrderByCreatedAtDesc(phone);
+                if (regs.isEmpty()) return "END No registrations found for this number.";
+                StringBuilder out = new StringBuilder("END YOUR REGISTRATIONS\n\n");
+                for (CacRegistration r : regs) {
+                    out.append(r.getBusinessName()).append(" — ").append(r.getStatus()).append("\n");
+                }
+                return out.toString();
+            case "2":
+                return "END Notification Preferences: Coming soon.";
+            case "3":
+                return "END Update Profile: Coming soon.";
+            case "0":
+                return showFFSOrgMenu(phone);
+            default:
+                return "CON Invalid choice.\n\n1. My Registrations\n2. Notification Preferences\n3. Update Profile\n0. Back";
+        }
     }
     // handle change hospital
     private String handleChangeHospital(String phone) {
@@ -2674,6 +2919,10 @@ public class ussdcontroller {
         return (org.getInitials() != null && org.getInitials().toUpperCase().contains("NABTEB"))
             || org.getName().toUpperCase().contains("NATIONAL BUSINESS");
     }
+    private boolean isCac(Organization org) {
+        return (org.getInitials() != null && org.getInitials().toUpperCase().contains("CAC"))
+            || org.getName().toUpperCase().contains("CORPORATE AFFAIRS COMMISSION");
+    }
 
     
 
@@ -2875,6 +3124,8 @@ public class ussdcontroller {
         saveToSession(phone, "cacRegType", null);
         saveToSession(phone, "cacRegField", null);
         saveToSession(phone, "cacRegName", null);
+        saveToSession(phone, "cacRegBusinessName", null);
+        saveToSession(phone, "cacRegRcNumber", null);
         saveToSession(phone, "cacRegEmail", null);
         saveToSession(phone, "cacRegState", null);
         saveToSession(phone, "cacRegOccupation", null);
@@ -5097,7 +5348,7 @@ public class ussdcontroller {
                 return "END FLOOD AND DISASTER ALERTS\n\n" +
                     "No active flood warnings.\n\n" +
                     "For updates dial *7447#\n" +
-                    "Select Alerts & Updates.";
+                    "Select Alerts and Updates.";
             case "5":
                 return "END PUBLIC SAFETY ANNOUNCEMENTS\n\n" +
                     "All markets must install\n" +
