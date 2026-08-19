@@ -21,11 +21,21 @@ public class CacRegistration {
     @Column(name = "reference_id", unique = true)
     private String referenceId;
 
+    // adding business name
+    @Column(name = "business_name")
+    private String businessName;
+
+    // adding rc_number
+    @Column(name = "rc_number")
+    private String rcNumber;
+
     @Column(name = "full_name")
     private String fullName;
 
     @Column(name = "email")
     private String email;
+    @Column(name = "status")
+    private String status;
 
     @Column(name = "state")
     private String state;
@@ -44,6 +54,10 @@ public class CacRegistration {
     public void setId(Long id) {
         this.id = id;
     }
+    public String getBusinessName() { return businessName; }
+    public void setBusinessName(String businessName) { this.businessName = businessName; }
+    public String getRcNumber() { return rcNumber; }
+    public void setRcNumber(String rcNumber) { this.rcNumber = rcNumber; }
 
     public String getPhoneNumber() {
         return phoneNumber;
@@ -56,6 +70,8 @@ public class CacRegistration {
 
     public String getReferenceId() { return referenceId; }
     public void setReferenceId(String referenceId) { this.referenceId = referenceId; }
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 
     public String getFullName() { return fullName; }
     public void setFullName(String fullName) { this.fullName = fullName; }
