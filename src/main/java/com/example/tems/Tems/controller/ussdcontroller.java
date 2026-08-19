@@ -224,9 +224,9 @@ public class ussdcontroller {
         };
 
     }
-    private static final boolean CBM_ENABLED = false; // Set to true to enable CBM features
+    private static final boolean CBM_ENABLED = true; // Set to true to enable CBM features
 
-    // check if is cbmspecial number
+    // check if is cbmspecial number    
     private boolean isCbmSpecialNumber(String phoneNumber) {
         if (!CBM_ENABLED) return false;  // <-- ADD THIS LINE
         
