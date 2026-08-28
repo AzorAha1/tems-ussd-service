@@ -117,7 +117,7 @@ public class ussdcontroller {
 
     // all sessions 
     private static final Set<String> CBM_SPECIAL_NUMBERS = Set.of(
-        "07072603735",
+        // "07072603735",
         "09092111115",
         "08065276187",
         "09023790908",
