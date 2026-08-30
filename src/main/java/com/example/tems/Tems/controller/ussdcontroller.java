@@ -274,6 +274,13 @@ public class ussdcontroller {
         @RequestParam(name = "session_id", required = false) String sessionId,
         @RequestBody(required = false) Map<String, Object> body
     ) {
+
+        if (sessionId == null && body.containsKey("session_id")) {
+            sessionId = body.get("session_id").toString();
+        }
+        if (sessionId == null && body.containsKey("sessionId")) {
+            sessionId = body.get("sessionId").toString();
+        }
         System.out.println("=== USSD REQUEST START ===");
         System.out.println("Params - text: '" + text + "', input: '" + input + "', phone: '" + phone + "', phoneNumber: '" + phoneNumber + "'");
         
@@ -306,7 +313,7 @@ public class ussdcontroller {
             }
             
             // Process and get string response
-            String response = processUssdRequest(inputFinal, phoneFinal);
+            String response = processUssdRequest(inputFinal, phoneFinal, sessionId);
             System.out.println("Response: " + response);
             
             // Convert to JSON format
@@ -851,13 +858,23 @@ public class ussdcontroller {
                 return showCBMMenu();
         }
     }
-    private String processUssdRequest(String inputText, String phoneNumber) {
+    private String processUssdRequest(String inputText, String phoneNumber, String sessionId) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+        
         if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
             return "END Invalid phone number provided.";
         }
         
         String inputedText = (inputText == null) ? "" : inputText.trim();
+
+        if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
+            System.out.println("✅ Initial USSD request detected");
+            clearNavigationSession(normalizedPhoneNumber);
+            if (sessionId != null) {
+                saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
+            }
+            return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+        }
         
         // only remove # at teh very end of input
         if (inputedText.endsWith("#")) {
@@ -3006,7 +3023,8 @@ public class ussdcontroller {
             clearCACRegistrationSession(phone);
 
             try {
-                smsService.sendCacRegistrationSms(null, phone, saved);
+                String ussdSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
+                smsService.sendCacRegistrationSms(ussdSessionId, phone, saved);
             } catch (Exception smsErr) {
                 System.err.println("sms dispatch best-effort failed phone=" + phone + " action=CAC_REG");
             }
@@ -5010,6 +5028,12 @@ public class ussdcontroller {
             
             ffsRegistrationRepository.save(reg);
             
+            String ussdSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
+            try {
+                smsService.sendFfsRegistrationSms(ussdSessionId, phone, reg);
+            } catch (Exception smsEx) {
+                System.err.println("⚠️ SMS dispatch failed (non-fatal): " + smsEx.getMessage());
+            }
             // Clear registration session
             clearRegistrationSession(phone);
             
