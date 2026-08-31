@@ -1,53 +1,49 @@
 package com.example.tems.Tems.model;
-
-
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-
 import jakarta.persistence.*;
-
 @Entity
 @Table(name = "cac_registration")
 public class CacRegistration {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
     @Column(name = "phone_number", nullable = false)
     private String phoneNumber;
-
     @Column(name = "registration_type")
     private String registrationType;
-
     @Column(name = "reference_id", unique = true)
     private String referenceId;
-
     // adding business name
     @Column(name = "business_name")
     private String businessName;
-
     // adding rc_number
     @Column(name = "rc_number")
     private String rcNumber;
-
     @Column(name = "full_name")
     private String fullName;
-
     @Column(name = "email")
     private String email;
     @Column(name = "status")
     private String status;
-
     @Column(name = "state")
     private String state;
-
     @Column(name = "occupation")
     private String occupation;
-
     @Column(name = "created_at")
     private LocalDateTime createdAt;
-
+    // NIN-derived fields
+    @Column(name = "nin")
+    private String nin;
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
+    @Column(name = "gender")
+    private String gender;
+    @Column(name = "lga")
+    private String lga;
+    @Column(name = "address")
+    private String address;
     public CacRegistration() {}
-
     public Long getId() {
         return id;
     }
@@ -58,7 +54,6 @@ public class CacRegistration {
     public void setBusinessName(String businessName) { this.businessName = businessName; }
     public String getRcNumber() { return rcNumber; }
     public void setRcNumber(String rcNumber) { this.rcNumber = rcNumber; }
-
     public String getPhoneNumber() {
         return phoneNumber;
     }
@@ -67,25 +62,28 @@ public class CacRegistration {
     }
      public String getRegistrationType() { return registrationType; }
     public void setRegistrationType(String registrationType) { this.registrationType = registrationType; }
-
     public String getReferenceId() { return referenceId; }
     public void setReferenceId(String referenceId) { this.referenceId = referenceId; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
-
     public String getFullName() { return fullName; }
     public void setFullName(String fullName) { this.fullName = fullName; }
-
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
-
     public String getState() { return state; }
     public void setState(String state) { this.state = state; }
-
     public String getOccupation() { return occupation; }
     public void setOccupation(String occupation) { this.occupation = occupation; }
-
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-
+    public String getNin() { return nin; }
+    public void setNin(String nin) { this.nin = nin; }
+    public LocalDate getDateOfBirth() { return dateOfBirth; }
+    public void setDateOfBirth(LocalDate dateOfBirth) { this.dateOfBirth = dateOfBirth; }
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
+    public String getLga() { return lga; }
+    public void setLga(String lga) { this.lga = lga; }
+    public String getAddress() { return address; }
+    public void setAddress(String address) { this.address = address; }
 }

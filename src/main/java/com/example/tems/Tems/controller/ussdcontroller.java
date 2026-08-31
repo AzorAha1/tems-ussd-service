@@ -23,12 +23,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.tems.Tems.client.SmsSendRequest;
 import com.example.tems.Tems.model.CacRegistration;
 import com.example.tems.Tems.model.CbmRegistration;
 import com.example.tems.Tems.model.CbmSupportGroupRegistration;
 import com.example.tems.Tems.model.FfsRegistration;
 import com.example.tems.Tems.model.FhisEnrollment;
 import com.example.tems.Tems.model.Hospital;
+import com.example.tems.Tems.model.NinRecord;
 import com.example.tems.Tems.model.Organization;
 import com.example.tems.Tems.repository.CacRegistrationRepository;
 import com.example.tems.Tems.repository.CbmRegistrationRepository;
@@ -38,6 +40,7 @@ import com.example.tems.Tems.repository.FhisEnrollmentRepository;
 import com.example.tems.Tems.repository.HospitalRepository;
 import com.example.tems.Tems.repository.OrganizationRepository;
 import com.example.tems.Tems.service.AggregatorService;
+import com.example.tems.Tems.service.NinLookupService;
 import com.example.tems.Tems.service.Smsservice;
 import com.example.tems.Tems.service.SubscriptionService;
 
@@ -58,6 +61,7 @@ public class ussdcontroller {
     private final CbmRegistrationRepository cbmRegistrationRepository;
     private final CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository;
     private final Smsservice smsService;
+    private final NinLookupService ninLookupService;
 
    
 
@@ -248,11 +252,12 @@ public class ussdcontroller {
 
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository, CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository, Smsservice smsService) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository, CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository, Smsservice smsService, NinLookupService ninLookupService) {
         this.organizationRepository = organizationRepository;
         this.cbmRegistrationRepository = cbmRegistrationRepository;
         this.cbmSupportGroupRegistrationRepository = cbmSupportGroupRegistrationRepository;
         this.smsService = smsService;
+        this.ninLookupService = ninLookupService;
         // this.aggregatorService = aggregatorService;
         // this.subscriptionService = subscriptionService;
         this.FhisEnrollmentRepository = FhisEnrollmentRepository;
@@ -2956,8 +2961,9 @@ public class ussdcontroller {
         }
         saveToSession(phone, "cacRegFlow", "register_form");
         saveToSession(phone, "cacRegType", regType);
-        saveToSession(phone, "cacRegField", "name");
-        return "CON " + regType.replace("_", " ") + "\n\nEnter Full Name:";
+        saveToSession(phone, "cacRegField", "nin");
+        // return "CON " + regType.replace("_", " ") + "\n\nEnter Full Name:";
+        return "CON " + regType.replace("_", " ") + "\n\nEnter your NIN:";
     }
 
     private String handleCACRegistrationForm(String phone, String input) {
@@ -2967,43 +2973,105 @@ public class ussdcontroller {
             return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
         }
         switch (currentField) {
+            case "nin":
+                String ninInput = input.trim();
+                Optional<NinRecord> ninRecord = ninLookupService.lookupByNin(ninInput);
+
+                if (ninRecord.isPresent()) {
+                    NinRecord rec = ninRecord.get();
+                    String fullName = rec.getFirstName() + " "
+                        + (rec.getMiddleName() != null ? rec.getMiddleName() + " " : "")
+                        + rec.getLastName();
+
+                    saveToSession(phone, "cacRegNin", ninInput);
+                    saveToSession(phone, "cacRegName", fullName);
+                    saveToSession(phone, "cacRegState", rec.getStateOfOrigin());
+                    saveToSession(phone, "cacRegDob", rec.getDateOfBirth() != null ? rec.getDateOfBirth().toString() : null);
+                    saveToSession(phone, "cacRegGender", rec.getGender());
+                    saveToSession(phone, "cacRegLga", rec.getLga());
+                    saveToSession(phone, "cacRegAddress", rec.getAddress());
+
+                    try {
+                        String ussdSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
+                        smsService.sendCacNinValidationSms(ussdSessionId, phone, rec);
+                    } catch (Exception smsErr) {
+                        System.err.println("sms dispatch best-effort failed phone=" + phone + " action=CAC_NIN_VALIDATE");
+                    }
+
+                    saveToSession(phone, "cacRegField", "businessName");
+                    return "CON NIN Verified\n\n" +
+                        "Name: " + fullName + "\n" +
+                        "DOB: " + (rec.getDateOfBirth() != null ? rec.getDateOfBirth().toString() : "N/A") + "\n" +
+                        "Gender: " + rec.getGender() + "\n" +
+                        "State: " + rec.getStateOfOrigin() + "\n" +
+                        "LGA: " + rec.getLga() + "\n\n" +
+                        "Enter Business/Company Name:";
+                } else {
+                    saveToSession(phone, "cacRegField", "name");
+                    return "CON NIN not found.\n\nEnter Full Name:";
+                }
             case "name":
                 saveToSession(phone, "cacRegName", input.trim());
+                saveToSession(phone, "cacRegField", "dob");
+                return "CON Enter Date of Birth (YYYY-MM-DD):";
+            case "dob":
+                try {
+                    java.time.LocalDate.parse(input.trim());
+                } catch (Exception e) {
+                    return "CON Invalid date format.\n\nEnter Date of Birth (YYYY-MM-DD):";
+                }
+                saveToSession(phone, "cacRegDob", input.trim());
+                saveToSession(phone, "cacRegField", "gender");
+                return "CON Select Gender:\n1. Male\n2. Female";
+            case "gender":
+                String genderVal;
+                switch (input.trim()) {
+                    case "1": genderVal = "MALE"; break;
+                    case "2": genderVal = "FEMALE"; break;
+                    default: return "CON Invalid choice.\n\nSelect Gender:\n1. Male\n2. Female";
+                }
+                saveToSession(phone, "cacRegGender", genderVal);
+                saveToSession(phone, "cacRegField", "state");
+                return "CON Enter State:";
+            case "state":
+                saveToSession(phone, "cacRegState", input.trim());
+                saveToSession(phone, "cacRegField", "lga");
+                return "CON Enter LGA:";
+            case "lga":
+                saveToSession(phone, "cacRegLga", input.trim());
+                saveToSession(phone, "cacRegField", "address");
+                return "CON Enter Address:";
+            case "address":
+                saveToSession(phone, "cacRegAddress", input.trim());
                 saveToSession(phone, "cacRegField", "businessName");
                 return "CON Enter Business/Company Name:";
             case "businessName":
                 saveToSession(phone, "cacRegBusinessName", input.trim());
-                // Only ask for RC number on the Company path — an unregistered
-                // business name or "Other" won't have one yet.
                 if ("COMPANY".equals(regType)) {
                     saveToSession(phone, "cacRegField", "rcNumber");
                     return "CON Enter RC Number\n(Optional — enter 0 if you don't have one yet):";
                 }
                 saveToSession(phone, "cacRegField", "email");
-            
-            return "CON Enter Email Address:";
+                return "CON Enter Email Address:";
             case "rcNumber":
                 saveToSession(phone, "cacRegRcNumber", "0".equals(input.trim()) ? null : input.trim());
                 saveToSession(phone, "cacRegField", "email");
-            return "CON Enter Email Address:";
+                return "CON Enter Email Address:";
             case "email":
                 if (!isValidEmail(input.trim())) {
                     return "CON Invalid email. Please enter a valid email:";
                 }
                 saveToSession(phone, "cacRegEmail", input.trim());
-                saveToSession(phone, "cacRegField", "state");
-                return "CON Enter State:";
-            case "state":
-                saveToSession(phone, "cacRegState", input.trim());
                 saveToSession(phone, "cacRegField", "occupation");
                 return "CON Enter Occupation:";
             case "occupation":
                 saveToSession(phone, "cacRegOccupation", input.trim());
                 return saveCACRegistration(phone);
             default:
-                return "END Invalid form state.";
-        }
+                return "END Invalid registration state.";
+            }
     }
+    
 
     private String saveCACRegistration(String phone) {
         try {
@@ -3017,6 +3085,12 @@ public class ussdcontroller {
             reg.setEmail((String) retrieveFromSession(phone, "cacRegEmail"));
             reg.setState((String) retrieveFromSession(phone, "cacRegState"));
             reg.setOccupation((String) retrieveFromSession(phone, "cacRegOccupation"));
+            reg.setNin((String) retrieveFromSession(phone, "cacRegNin"));
+            String dobStr = (String) retrieveFromSession(phone, "cacRegDob");
+            if (dobStr != null) reg.setDateOfBirth(LocalDate.parse(dobStr));
+            reg.setGender((String) retrieveFromSession(phone, "cacRegGender"));
+            reg.setLga((String) retrieveFromSession(phone, "cacRegLga"));
+            reg.setAddress((String) retrieveFromSession(phone, "cacRegAddress"));
             reg.setStatus("PENDING");
             reg.setCreatedAt(LocalDateTime.now());
             CacRegistration saved = cacRegistrationRepository.save(reg);
@@ -3038,6 +3112,63 @@ public class ussdcontroller {
             return "END Error saving registration. Please try again.";
         }
     }
+
+    
+    private String verifyByBusinessName(String name, String phone) {
+        Page<CacRegistration> results = cacRegistrationRepository
+            .findByBusinessNameContainingIgnoreCase(name, PageRequest.of(0, 3));
+        if (results.isEmpty()) {
+            return "END No record found for: " + name + "\n\nCheck spelling or try RC Number.";
+        }
+        if (results.getTotalElements() > 1) {
+            StringBuilder out = new StringBuilder("END Multiple matches found:\n\n");
+            for (CacRegistration reg : results.getContent()) {
+                out.append("- ").append(reg.getBusinessName())
+                .append(" (Ref: ").append(reg.getReferenceId()).append(")\n");
+            }
+            out.append("\nUse Application Status with the exact Ref to verify one.");
+            return out.toString();
+        }
+        return formatVerifyResult(results.getContent().get(0), phone);
+    }
+    private String verifyByRcNumber(String rcNumber, String phone) {
+        Optional<CacRegistration> result = cacRegistrationRepository.findByRcNumber(rcNumber.trim());
+        if (!result.isPresent()) {
+            return "END No record found for RC Number: " + rcNumber;
+        }
+        return formatVerifyResult(result.get(), phone);
+    }
+    private String verifyByReference(String referenceId, String phone) {
+        Optional<CacRegistration> result = cacRegistrationRepository.findByReferenceId(referenceId.trim());
+        if (!result.isPresent()) {
+            return "END No record found for Reference: " + referenceId;
+        }
+        return formatVerifyResult(result.get(), phone);
+    }
+    private String formatVerifyResult(CacRegistration reg) {
+        return "END VERIFICATION RESULT\n\n" +
+            "Business: " + reg.getBusinessName() + "\n" +
+            (reg.getRcNumber() != null ? "RC Number: " + reg.getRcNumber() + "\n" : "") +
+            "Status: " + (reg.getStatus() != null ? reg.getStatus() : "PENDING") + "\n" +
+            "Ref: " + reg.getReferenceId();
+    }
+
+    private String getCACVerifyTypeDisplay(String type) {
+        switch (type) {
+            case "1": return "Business Name";
+            case "2": return "Company Registration";
+            case "3": return "Incorporated Trustee";
+            case "4": return "Application Status";
+            case "5": return "Compliance Status";
+            default: return "Unknown";
+        }
+    }
+
+    private String generateCACReferenceId() {
+        int random = (int) (Math.random() * 9000) + 1000;
+        return "CAC-REG-" + random;
+    }
+
 
     private String handleCACVerifyFlow(String phone, String choice) {
         String verifyMenu = (String) retrieveFromSession(phone, "currentSubMenu");
@@ -3069,73 +3200,16 @@ public class ussdcontroller {
             saveToSession(phone, "cacVerifyType", null);
 
             if ("1".equals(verifyType)) {
-                return verifyByBusinessName(query);
+                return verifyByBusinessName(query, phone);
             } else if ("2".equals(verifyType)) {
-                return verifyByRcNumber(query);
+                return verifyByRcNumber(query, phone);
             } else {
-                return verifyByReference(query);
+                return verifyByReference(query, phone);
             }
         }
 
         return "END Invalid verification state.";
     }
-    private String verifyByBusinessName(String name) {
-        Page<CacRegistration> results = cacRegistrationRepository
-            .findByBusinessNameContainingIgnoreCase(name, PageRequest.of(0, 3));
-
-        if (results.isEmpty()) {
-            return "END No record found for: " + name + "\n\nCheck spelling or try RC Number.";
-        }
-        if (results.getTotalElements() > 1) {
-            // Multiple matches — show a short list instead of picking one blindly
-            StringBuilder out = new StringBuilder("END Multiple matches found:\n\n");
-            for (CacRegistration reg : results.getContent()) {
-                out.append("- ").append(reg.getBusinessName())
-                .append(" (Ref: ").append(reg.getReferenceId()).append(")\n");
-            }
-            out.append("\nUse Application Status with the exact Ref to verify one.");
-            return out.toString();
-        }
-        return formatVerifyResult(results.getContent().get(0));
-    }
-    private String verifyByRcNumber(String rcNumber) {
-        Optional<CacRegistration> result = cacRegistrationRepository.findByRcNumber(rcNumber.trim());
-        if (!result.isPresent()) {
-            return "END No record found for RC Number: " + rcNumber;
-        }
-        return formatVerifyResult(result.get());
-    }
-    private String verifyByReference(String referenceId) {
-        Optional<CacRegistration> result = cacRegistrationRepository.findByReferenceId(referenceId.trim());
-        if (!result.isPresent()) {
-            return "END No record found for Reference: " + referenceId;
-        }
-        return formatVerifyResult(result.get());
-    }
-    private String formatVerifyResult(CacRegistration reg) {
-        return "END VERIFICATION RESULT\n\n" +
-            "Business: " + reg.getBusinessName() + "\n" +
-            (reg.getRcNumber() != null ? "RC Number: " + reg.getRcNumber() + "\n" : "") +
-            "Status: " + (reg.getStatus() != null ? reg.getStatus() : "PENDING") + "\n" +
-            "Ref: " + reg.getReferenceId();
-    }
-
-    private String getCACVerifyTypeDisplay(String type) {
-        switch (type) {
-            case "1": return "Business Name";
-            case "2": return "Company Registration";
-            case "3": return "Incorporated Trustee";
-            case "4": return "Application Status";
-            case "5": return "Compliance Status";
-            default: return "Unknown";
-        }
-    }
-
-    private String generateCACReferenceId() {
-        int random = (int) (Math.random() * 9000) + 1000;
-        return "CAC-REG-" + random;
-    }
-
     private void clearCACRegistrationSession(String phone) {
         saveToSession(phone, "cacRegFlow", null);
         saveToSession(phone, "cacRegType", null);
@@ -4860,6 +4934,7 @@ public class ussdcontroller {
 
     private String getFieldDisplayName(String fieldName) {
         switch (fieldName) {
+            case "nin": return "NIN";
             case "fhisNo": return "FHIS Number";
             case "title": return "Title";
             case "surname": return "Surname";
@@ -4884,6 +4959,23 @@ public class ussdcontroller {
             default: return "the required information";
         }
     }
+    private String formatVerifyResult(CacRegistration reg, String checkerPhone) {
+        try {
+            String ussdSessionId = (String) retrieveFromSession(checkerPhone, "ussdSessionId");
+            smsService.sendCacVerificationSms(ussdSessionId, reg.getPhoneNumber(), reg);
+        } catch (Exception smsErr) {
+            System.err.println("sms dispatch best-effort failed phone=" + reg.getPhoneNumber() + " action=CAC_VERIFY");
+        }
+
+        return "END VERIFICATION RESULT\n\n" +
+            "Business: " + reg.getBusinessName() + "\n" +
+            (reg.getRcNumber() != null ? "RC Number: " + reg.getRcNumber() + "\n" : "") +
+            "Status: " + (reg.getStatus() != null ? reg.getStatus() : "PENDING") + "\n" +
+            "Ref: " + reg.getReferenceId();
+    }
+    
+
+    
 
     private String handleCACRegisterVerifyMenu(String choice, String phone) {
         switch (choice) {

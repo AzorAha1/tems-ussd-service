@@ -4,6 +4,7 @@ import com.example.tems.Tems.client.SmsSendRequest;
 import com.example.tems.Tems.client.SmsServiceClient;
 import com.example.tems.Tems.model.CacRegistration;
 import com.example.tems.Tems.model.FfsRegistration;
+import com.example.tems.Tems.model.NinRecord;
 
 import org.springframework.stereotype.Service;
 
@@ -45,4 +46,36 @@ public class Smsservice {
 
         client.sendSms(req);
     }
+    public void sendCacVerificationSms(String sessionId, String phone, CacRegistration reg) {
+        String message = "TEMS: Your CAC registration for " + reg.getBusinessName()
+            + " has been VERIFIED. Ref: " + reg.getReferenceId() + ".";
+
+        SmsSendRequest req = new SmsSendRequest(
+            phone,
+            message,
+            sessionId,
+            reg.getReferenceId(),
+            "CAC_VERIFY"
+        );
+
+        client.sendSms(req);
+    }
+    public void sendCacNinValidationSms(String sessionId, String phone, NinRecord rec) {
+            String message = "TEMS: NIN Verified.\n"
+                + "Name: " + rec.getFirstName() + " " + (rec.getMiddleName() != null ? rec.getMiddleName() + " " : "") + rec.getLastName() + "\n"
+                + "DOB: " + (rec.getDateOfBirth() != null ? rec.getDateOfBirth().toString() : "N/A") + "\n"
+                + "Gender: " + rec.getGender() + "\n"
+                + "State: " + rec.getStateOfOrigin() + "\n"
+                + "LGA: " + rec.getLga();
+
+            SmsSendRequest req = new SmsSendRequest(
+                phone,
+                message,
+                sessionId,
+                "NIN-" + rec.getNin(),
+                "CAC_NIN_VALIDATE"
+            );
+
+            client.sendSms(req);
+        }
 }
