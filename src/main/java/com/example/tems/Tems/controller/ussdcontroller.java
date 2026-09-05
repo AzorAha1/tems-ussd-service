@@ -218,6 +218,7 @@ public class ussdcontroller {
             "cacRegFlow", "cacRegType", "cacRegField",
             "cacRegName", "cacRegBusinessName", "cacRegRcNumber",
             "cacRegEmail", "cacRegState", "cacRegOccupation",
+            "cacRegNin", "cacRegDob", "cacRegGender", "cacRegLga", "cacRegAddress","ussdSessionId",
             "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
         };
 
