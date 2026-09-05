@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import javax.print.attribute.standard.MediaSize.Other;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -1162,16 +1164,11 @@ public class ussdcontroller {
 
         if (isCAC) {
             return "CON " + orgofchoice.getName() + "\n" +
-                "1. Register\n" +
-                "2. Search / Verify\n" +
-                "3. Check Status\n" +
-                "4. Compliance\n" +
-                "5. Requests\n" +
-                "6. Fees and Guidelines\n" +
-                "7. Find CAC\n" +
-                "8. Notifications\n" +
-                "9. About CAC\n" +
-                "10. Account / Profile\n" +
+                "1. Business Name Registration" + "\n" +
+                "2. Data Validation" + "\n" +
+                "3. Verification" + "\n" +
+                "4. Fees, Guidelines and Procedures" + "\n" +
+                "5. Other Services" + "\n" +
                 "0. Main Menu";
         }
         
@@ -1376,7 +1373,8 @@ public class ussdcontroller {
                         "7. General Enquiry\n" +
                         "0. Back";
                 } else if (isCac(org)) {
-                    return showCACVerifySubMenu(phone);
+                    saveToSession(phone, "currentSubMenu", "cac_check_status");
+                    return "CON CHECK STATUS\n\nEnter Reference Number:";
                 } else {
                 return "CON Request:\nThis service is coming soon.\n\n0. Back";
             }
@@ -1402,8 +1400,7 @@ public class ussdcontroller {
                         "4. Verification Guidelines\n" +
                         "0. Back";
                 } else if (org.getName().toUpperCase().contains("CAC") || org.getName().toUpperCase().contains("CORPORATE AFFAIRS")) {
-                    saveToSession(phone, "currentSubMenu", "cac_check_status");
-                    return "CON CHECK STATUS\n\nEnter Reference Number:";
+                    return showCACVerifySubMenu(phone);
                 } else {
                     return "CON Report:\nThis service is coming soon.\n\n0. Back";
                 }
@@ -1428,12 +1425,12 @@ public class ussdcontroller {
                         "5. Centre Information\n" +
                         "0. Back";
                 } else if (isCac(org)) {
-                   saveToSession(phone, "currentSubMenu", "cac_compliance");
-                    return "CON COMPLIANCE\n\n" +
-                        "1. Annual Returns\n" +
-                        "2. Due Date\n" +
-                        "3. Compliance Status\n" +
-                        "4. Reminders\n" +
+                    saveToSession(phone, "currentSubMenu", "cac_fees_guidelines");
+                    return "CON FEES and GUIDELINES\n\n" +
+                        "1. Fees\n" +
+                        "2. Procedures\n" +
+                        "3. Requirements\n" +
+                        "4. FAQs\n" +
                         "0. Back";
                 }
                 else {
@@ -1464,12 +1461,13 @@ public class ussdcontroller {
                         "9. Payment Procedure\n" +
                         "0. Back";
                 } else if (isCac(org)) {
-                    saveToSession(phone, "currentSubMenu", "cac_requests");
-                    return "CON REQUESTS\n\n" +
-                        "1. Information\n" +
-                        "2. Complaint\n" +
-                        "3. Callback\n" +
-                        "4. Support\n" +
+                    saveToSession(phone, "currentSubMenu", "cac_other_services");
+                    return "CON OTHER SERVICES\n\n" +
+                        "1. Fees and Compliance\n" +
+                        "2. Find CAC\n" +
+                        "3. Profile\n" +
+                        "4. Report\n" +
+                        "5. Request\n" +
                         "0. Back";
                 }
                 else {
@@ -1790,6 +1788,69 @@ public class ussdcontroller {
         }
         if ("cac_annual_returns_form".equals(currentSubMenu)) {
             return handleCACAnnualReturnsForm(phone, choice);
+        }
+        if ("cac_other_services".equals(currentSubMenu)) {
+            switch (choice) {
+                case "1":
+                    saveToSession(phone, "currentSubMenu", "cac_fees_compliance_choice");
+                    return "CON FEES AND COMPLIANCE\n\n" +
+                        "1. Fees and Guidelines\n" +
+                        "2. Compliance Status\n" +
+                        "0. Back";
+                case "2":
+                    saveToSession(phone, "currentSubMenu", "cac_find_cac");
+                    return "CON FIND CAC\n\n" +
+                        "1. Offices\n" +
+                        "2. Contacts\n" +
+                        "3. Service Locations\n" +
+                        "0. Back";
+                case "3":
+                    saveToSession(phone, "currentSubMenu", "cac_account_profile");
+                    return "CON ACCOUNT / PROFILE\n\n" +
+                        "1. My Registrations\n" +
+                        "2. Notification Preferences\n" +
+                        "3. Update Profile\n" +
+                        "0. Back";
+                case "4":
+                    saveToSession(phone, "currentSubMenu", null);
+                    return "CON REPORT\n\nThis service is coming soon.\n\n0. Back";
+                case "5":
+                    saveToSession(phone, "currentSubMenu", "cac_requests");
+                    return "CON REQUESTS\n\n" +
+                        "1. Information\n" +
+                        "2. Complaint\n" +
+                        "3. Callback\n" +
+                        "4. Support\n" +
+                        "0. Back";
+                case "0":
+                    saveToSession(phone, "currentSubMenu", null);
+                    return showorgmenu(org);
+                default:
+                    return "CON Invalid choice.\n\nOTHER SERVICES\n\n" +
+                        "1. Fees and Compliance\n" +
+                        "2. Find CAC\n" +
+                        "3. Profile\n" +
+                        "4. Report\n" +
+                        "5. Request\n" +
+                        "0. Back";
+            }
+        }
+        if ("cac_fees_compliance_choice".equals(currentSubMenu)) {
+            saveToSession(phone, "currentSubMenu", null);
+            if ("1".equals(choice)) {
+                saveToSession(phone, "currentSubMenu", "cac_fees_guidelines");
+                return "CON FEES and GUIDELINES\n\n" +
+                    "1. Fees\n" + "2. Procedures\n" + "3. Requirements\n" + "4. FAQs\n" +
+                    "0. Back";
+            } else if ("2".equals(choice)) {
+                saveToSession(phone, "currentSubMenu", "cac_compliance");
+                return "CON COMPLIANCE\n\n" +
+                    "1. Annual Returns\n" + "2. Due Date\n" + "3. Compliance Status\n" + "4. Reminders\n" +
+                    "0. Back";
+            } else {
+                saveToSession(phone, "currentSubMenu", "cac_fees_compliance_choice");
+                return "CON Invalid choice.\n\n1. Fees and Guidelines\n2. Compliance Status\n0. Back";
+            }
         }
         if ("cac_requests".equals(currentSubMenu)) {
             saveToSession(phone, "currentSubMenu", null);
