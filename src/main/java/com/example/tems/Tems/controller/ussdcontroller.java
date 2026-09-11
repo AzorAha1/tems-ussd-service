@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.tems.Tems.client.CbmApiClient;
 import com.example.tems.Tems.client.SmsSendRequest;
 import com.example.tems.Tems.model.CacRegistration;
 import com.example.tems.Tems.model.CbmRegistration;
@@ -64,6 +65,7 @@ public class ussdcontroller {
     private final CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository;
     private final Smsservice smsService;
     private final NinLookupService ninLookupService;
+    private final CbmApiClient cbmApiClient;
 
    
 
@@ -250,17 +252,19 @@ public class ussdcontroller {
             "5. News\n" +
             "6. Contacts\n" +
             "7. Updates\n" +
+            "8. Check Membership\n" +
             "0. Exit";
     }
 
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository, CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository, Smsservice smsService, NinLookupService ninLookupService) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository, CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository, Smsservice smsService, NinLookupService ninLookupService, CbmApiClient cbmApiClient) {
         this.organizationRepository = organizationRepository;
         this.cbmRegistrationRepository = cbmRegistrationRepository;
         this.cbmSupportGroupRegistrationRepository = cbmSupportGroupRegistrationRepository;
         this.smsService = smsService;
         this.ninLookupService = ninLookupService;
+        this.cbmApiClient = cbmApiClient;
         // this.aggregatorService = aggregatorService;
         // this.subscriptionService = subscriptionService;
         this.FhisEnrollmentRepository = FhisEnrollmentRepository;
@@ -574,9 +578,29 @@ public class ussdcontroller {
                 return handleCBMPaginated(phone, input, MINISTERIAL_ACHIEVEMENTS, "achievements");
             case "news":
                 return handleCBMPaginated(phone, input, NEWS_ITEMS, "main_menu");
+            case "check_membership":
+                return handleCBMCheckMembership(phone, input);
             default:
                 saveToSession(phone, "cbmFlow", null);
                 return showCBMMenu();
+        }
+    }
+    private String handleCBMCheckMembership(String phone, String input) {
+        String memberId = input.trim();
+        saveToSession(phone, "cbmFlow", null);
+
+        Optional<Map<String, Object>> result = cbmApiClient.verifyMemberById(memberId);
+
+        if (result.isPresent()) {
+            Map<String, Object> data = result.get();
+            return "END MEMBERSHIP STATUS\n\n" +
+                "Member ID: " + data.get("member_id") + "\n" +
+                "Tier: " + data.get("verification_tier") + "\n" +
+                "Status: " + data.get("status") + "\n" +
+                (Boolean.TRUE.equals(data.get("is_verified")) ? "Verified: YES" : "Verified: NO");
+        } else {
+            return "END No membership record found for:\n" + memberId +
+                "\n\nCheck the ID and try again, or dial *7447# to join.";
         }
     }
     private String handleCBMAbout(String phone, String choice) {
@@ -856,7 +880,11 @@ public class ussdcontroller {
                     
             case "7":
                 return "END NEWS AND UPDATE\n\nCheck back later for updates.\n\nwww.cbm.com";
-                
+            
+            case "8":
+                saveToSession(phone, "cbmFlow", "check_membership");
+                return "CON CHECK MEMBERSHIP\n\nEnter your CBM Member ID\n(e.g. CBM-2026-NG-04217):";
+                            
             case "0":
                 saveToSession(phone, "cbmFlow", null);
                 resetUserSession(phone);
