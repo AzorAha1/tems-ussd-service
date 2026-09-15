@@ -927,7 +927,7 @@ public class ussdcontroller {
         "Enugu Food Hub", "ABC Restaurant"
     };
 
-    private boolean isTextMeFoodEntry(String input) {
+    private boolean isTextMeFoodEntry(String input, String phone, String sessionId) {
         if (input == null) {
             return false;
         }
@@ -935,7 +935,48 @@ public class ussdcontroller {
         if (normalized.endsWith("#")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
-        return "*7447*101".equals(normalized) || "7447*101".equals(normalized);
+        if ("*7447*10".equals(normalized) || "7447*10".equals(normalized)) {
+            return true;
+        }
+        if ("*10".equals(normalized) || "10".equals(normalized)) {
+            return !isActiveUssdFollowUp(phone, sessionId);
+        }
+        return false;
+    }
+
+    private boolean isActiveUssdFollowUp(String phone, String sessionId) {
+        Object menuShown = retrieveFromSession(phone, "menuShown");
+        boolean hasMenu = false;
+        if (menuShown instanceof Boolean) {
+            hasMenu = (Boolean) menuShown;
+        } else if (menuShown instanceof String) {
+            hasMenu = "true".equalsIgnoreCase((String) menuShown);
+        }
+        if (!hasMenu) {
+            return false;
+        }
+
+        String storedSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
+        return sessionId == null || storedSessionId == null || sessionId.equals(storedSessionId);
+    }
+
+    private boolean isTextMeFoodSearchTerm(String searchTerm) {
+        if (searchTerm == null) {
+            return false;
+        }
+        String normalized = searchTerm.trim().toLowerCase().replaceAll("[^a-z0-9]", "");
+        return "textmefood".equals(normalized)
+            || "tmf".equals(normalized)
+            || "textfood".equals(normalized);
+    }
+
+    private String startTextMeFoodFromSearch(String phone) {
+        clearNavigationSession(phone);
+        clearTextMeFoodSession(phone);
+        saveToSession(phone, "menuShown", "true");
+        saveToSession(phone, "lastInteraction", System.currentTimeMillis());
+        saveToSession(phone, "tmfFlow", "main_menu");
+        return showTextMeFoodMainMenu();
     }
 
     private String showTextMeFoodMainMenu() {
@@ -1004,7 +1045,7 @@ public class ussdcontroller {
                 saveToSession(phone, "tmfFlow", "benefits_menu");
                 return showTextMeFoodBenefits();
             case "5":
-                return "END TEXT ME FOOD HELP\n\nFor support, contact the\nfoundation help desk.\n\nDial *7447*101# to restart.";
+                return "END TEXT ME FOOD HELP\n\nFor support, contact the\nfoundation help desk.\n\nDial *7447*10# to restart.";
             case "6":
             case "0":
                 clearTextMeFoodSession(phone);
@@ -1472,7 +1513,7 @@ public class ussdcontroller {
         
         String inputedText = (inputText == null) ? "" : inputText.trim();
 
-        if (isTextMeFoodEntry(inputedText)) {
+        if (isTextMeFoodEntry(inputedText, normalizedPhoneNumber, sessionId)) {
             System.out.println("Routing to Text Me Food Foundation substring flow");
             resetUserSession(normalizedPhoneNumber);
             if (sessionId != null) {
@@ -1506,7 +1547,7 @@ public class ussdcontroller {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
         }
 
-        if (isTextMeFoodEntry(inputedText)) {
+        if (isTextMeFoodEntry(inputedText, normalizedPhoneNumber, sessionId)) {
             System.out.println("Routing to Text Me Food Foundation substring flow");
             resetUserSession(normalizedPhoneNumber);
             if (sessionId != null) {
@@ -1687,6 +1728,9 @@ public class ussdcontroller {
                 if (searchTerm.isEmpty()) {
                     return "CON Please enter an organization name:";
                 }
+                if (isTextMeFoodSearchTerm(searchTerm)) {
+                    return startTextMeFoodFromSearch(phone);
+                }
                 
                 Pageable firstPage = PageRequest.of(0, 5);
                 Page<Organization> results = handleOrganizationSearch(searchTerm, firstPage);
@@ -1852,6 +1896,9 @@ public class ussdcontroller {
             
             if (searchTerm.isEmpty()) {
                 return "CON Enter the name or initials of the organization:";
+            }
+            if (isTextMeFoodSearchTerm(searchTerm)) {
+                return startTextMeFoodFromSearch(phone);
             }
             
             Pageable firstPage = PageRequest.of(0, 5);
