@@ -184,7 +184,7 @@ public class ussdcontroller {
             "selectedOrgId", "searchTerm", "currentPage", "totalPages", "org_ids", 
             "isMoreResultsFlow", "currentSubMenu", "hospitalPage", "totalHospitalPages", 
             "hospital_ids", "pendingHospitalId", "hospitalSearchTerm",
-            "menuShown", "lastInteraction", "awaitingSearchTerm" // Added for menu tracking
+            "menuShown", "lastInteraction", "awaitingSearchTerm","cbmUssdRelayActive" // Added for menu tracking
         };
         
         public static final String[] ENROLLMENT_KEYS = {
@@ -213,7 +213,7 @@ public class ussdcontroller {
             "ffsRegOccupation", "ffsRegOrg", "cacRegType", "cacRegField",
             "cacRegName", "cacRegEmail", "cacRegState", "cacRegOccupation",
             "cacVerifyType","cbmFlow", "cbmField", "cbmFirstName", "cbmLastName", "cbmEmail", 
-            "cbmVin", "cbmGender", "cbmOrgName", "cbmSupportType", "cbmSpread", "cbmReferral",
+            "cbmVin", "cbmGender", "cbmOrgName", "cbmSupportType", "cbmSpread", "cbmReferral", "cbmUssdRelayActive",
             "nabtebFlow", "nabtebSubMenu", "nabtebRegField",
             "nabtebRegType", "nabtebFullName", "nabtebPhone",
             "nabtebDob", "nabtebGender", "nabtebState",
@@ -224,7 +224,7 @@ public class ussdcontroller {
             "cacRegName", "cacRegBusinessName", "cacRegRcNumber",
             "cacRegEmail", "cacRegState", "cacRegOccupation",
             "cacRegNin", "cacRegDob", "cacRegGender", "cacRegLga", "cacRegAddress","ussdSessionId",
-            "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
+            "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType", 
         };
 
         // FFS registration keys can be added here if needed
@@ -949,11 +949,11 @@ public class ussdcontroller {
 
         extendUserSession(normalizedPhoneNumber);
 
-        if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
-            System.out.println("✅ Initial USSD request detected");
-            clearNavigationSession(normalizedPhoneNumber);
-            return HandleLevel1(normalizedPhoneNumber, new String[0], true);
-        }
+        // if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
+        //     System.out.println("✅ Initial USSD request detected");
+        //     clearNavigationSession(normalizedPhoneNumber);
+        //     return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+        // }
 
         String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.currentTimeMillis()/1000;
         if (isDuplicateRequest(requestId, inputedText)) {
