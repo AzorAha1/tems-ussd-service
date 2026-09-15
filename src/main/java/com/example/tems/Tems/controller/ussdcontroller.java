@@ -430,13 +430,6 @@ public class ussdcontroller {
     }
 
     private boolean shouldReturnPlainUssd(HttpServletRequest request, String acceptHeader, String contentTypeHeader) {
-        String method = request == null ? "" : request.getMethod();
-        if ("GET".equalsIgnoreCase(method)) {
-            return true;
-        }
-        if (contentTypeHeader != null && contentTypeHeader.toLowerCase().contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE)) {
-            return true;
-        }
         return acceptHeader != null && acceptHeader.toLowerCase().contains(MediaType.TEXT_PLAIN_VALUE);
     }
 
@@ -1024,20 +1017,33 @@ public class ussdcontroller {
     };
 
     private boolean isTextMeFoodEntry(String input, String phone, String sessionId) {
-        if (input == null) {
+        if (input == null || input.trim().isEmpty()) {
             return false;
         }
+
         String normalized = input.trim();
-        if (normalized.endsWith("#")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
+        while (normalized.endsWith("#")) {
+            normalized = normalized.substring(0, normalized.length() - 1).trim();
         }
-        if ("*7447*10".equals(normalized) || "7447*10".equals(normalized)) {
-            return true;
-        }
+
         if ("*10".equals(normalized) || "10".equals(normalized)) {
             return !isActiveUssdFollowUp(phone, sessionId);
         }
-        return false;
+
+        if ("*7447*10".equals(normalized) || "7447*10".equals(normalized) || "744710".equals(normalized)) {
+            return true;
+        }
+
+        if (normalized.contains("*")) {
+            String[] parts = normalized.split("\\*");
+            for (String part : parts) {
+                if ("10".equals(part)) {
+                    return true;
+                }
+            }
+        }
+
+        return normalized.startsWith("7447") && normalized.endsWith("10");
     }
 
     private boolean isActiveUssdFollowUp(String phone, String sessionId) {
