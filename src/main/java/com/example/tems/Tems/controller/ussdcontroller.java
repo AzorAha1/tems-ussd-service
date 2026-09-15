@@ -24,6 +24,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -285,8 +287,9 @@ public class ussdcontroller {
         this.cbmUssdRelayClient = cbmUssdRelayClient;
     }
     
-    @PostMapping(
+    @RequestMapping(
         value = "/ussd",
+        method = {RequestMethod.GET, RequestMethod.POST},
         produces = MediaType.APPLICATION_JSON_VALUE
     )
     public Map<String, Object> handleUssdRequest(
