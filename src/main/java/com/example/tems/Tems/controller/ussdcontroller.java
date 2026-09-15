@@ -127,7 +127,6 @@ public class ussdcontroller {
 
     // all sessions 
     private static final Set<String> CBM_SPECIAL_NUMBERS = Set.of(
-        // "07072603735",
         "09092111115",
         "08065276187",
         "09023790908",
@@ -143,7 +142,7 @@ public class ussdcontroller {
         "07016700781",
         "09023186015",
         "09025639317",
-        "07060961678",
+        "07060961678", 
         "09034113144",
         "08034177597",
         "08033367853",
@@ -157,8 +156,7 @@ public class ussdcontroller {
         "07062807200",
         "07065551742",
         "07072603735",
-        "08162251186",
-        "07060961678"
+        "08162251186"
     );
     @PostMapping("/add-nabteb")
     public Map<String, Object> addNabteb() {
