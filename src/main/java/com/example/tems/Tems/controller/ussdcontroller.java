@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.tems.Tems.client.CbmApiClient;
+import com.example.tems.Tems.client.CbmUssdRelayClient;
 import com.example.tems.Tems.client.SmsSendRequest;
 import com.example.tems.Tems.model.CacRegistration;
 import com.example.tems.Tems.model.CbmRegistration;
@@ -66,6 +67,7 @@ public class ussdcontroller {
     private final Smsservice smsService;
     private final NinLookupService ninLookupService;
     private final CbmApiClient cbmApiClient;
+    private final CbmUssdRelayClient cbmUssdRelayClient;
 
    
 
@@ -254,12 +256,13 @@ public class ussdcontroller {
             "6. Contacts\n" +
             "7. Updates\n" +
             "8. Check Membership\n" +
+            "9. Register for CBM\n" +
             "0. Exit";
     }
 
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
-    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository, CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository, Smsservice smsService, NinLookupService ninLookupService, CbmApiClient cbmApiClient) {
+    public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository, CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository, Smsservice smsService, NinLookupService ninLookupService, CbmApiClient cbmApiClient, CbmUssdRelayClient cbmUssdRelayClient) {
         this.organizationRepository = organizationRepository;
         this.cbmRegistrationRepository = cbmRegistrationRepository;
         this.cbmSupportGroupRegistrationRepository = cbmSupportGroupRegistrationRepository;
@@ -272,6 +275,7 @@ public class ussdcontroller {
         this.hospitalRepository = hospitalRepository;
         this.ffsRegistrationRepository = ffsRegistrationRepository;
         this.cacRegistrationRepository = cacRegistrationRepository;
+        this.cbmUssdRelayClient = cbmUssdRelayClient;
     }
     
     @PostMapping(
@@ -885,7 +889,11 @@ public class ussdcontroller {
             case "8":
                 saveToSession(phone, "cbmFlow", "check_membership");
                 return "CON CHECK MEMBERSHIP\n\nEnter your CBM Member ID\n(e.g. CBM-2026-NG-04217):";
-                            
+            
+            case "9":
+                String ussdSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
+                saveToSession(phone, "cbmUssdRelayActive", "true");
+                return cbmUssdRelayClient.relay(ussdSessionId, phone, "");              
             case "0":
                 saveToSession(phone, "cbmFlow", null);
                 resetUserSession(phone);
@@ -911,6 +919,14 @@ public class ussdcontroller {
                 saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
             }
             return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+        }
+        if ("true".equals(retrieveFromSession(normalizedPhoneNumber, "cbmUssdRelayActive"))) {
+            String ussdSessionId = (String) retrieveFromSession(normalizedPhoneNumber, "ussdSessionId");
+            String relayResponse = cbmUssdRelayClient.relay(ussdSessionId, normalizedPhoneNumber, inputedText);
+            if (relayResponse.startsWith("END")) {
+                saveToSession(normalizedPhoneNumber, "cbmUssdRelayActive", null);
+            }
+            return relayResponse;
         }
         
         // only remove # at teh very end of input
