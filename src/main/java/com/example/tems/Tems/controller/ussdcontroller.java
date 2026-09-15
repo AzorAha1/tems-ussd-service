@@ -156,7 +156,7 @@ public class ussdcontroller {
         "07062807200",
         "07065551742",
         "07072603735",
-        "08162251186",
+        "08162251186"
     );
     @PostMapping("/add-nabteb")
     public Map<String, Object> addNabteb() {
