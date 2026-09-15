@@ -430,13 +430,6 @@ public class ussdcontroller {
     }
 
     private boolean shouldReturnPlainUssd(HttpServletRequest request, String acceptHeader, String contentTypeHeader) {
-        String method = request == null ? "" : request.getMethod();
-        if ("GET".equalsIgnoreCase(method)) {
-            return true;
-        }
-        if (contentTypeHeader != null && contentTypeHeader.toLowerCase().contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE)) {
-            return true;
-        }
         return acceptHeader != null && acceptHeader.toLowerCase().contains(MediaType.TEXT_PLAIN_VALUE);
     }
 
