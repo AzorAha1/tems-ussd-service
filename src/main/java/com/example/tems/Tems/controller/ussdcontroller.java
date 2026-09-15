@@ -289,20 +289,25 @@ public class ussdcontroller {
     public Map<String, Object> handleUssdRequest(
         @RequestParam(name = "text", required = false) String text,
         @RequestParam(name = "input", required = false) String input,
+        @RequestParam(name = "serviceCode", required = false) String serviceCode,
         @RequestParam(name = "phoneNumber", required = false) String phoneNumber,
         @RequestParam(name = "phone", required = false) String phone,
         @RequestParam(name = "session_id", required = false) String sessionId,
+        @RequestParam(name = "sessionId", required = false) String sessionIdParam,
         @RequestBody(required = false) Map<String, Object> body
     ) {
 
-        if (sessionId == null && body.containsKey("session_id")) {
+        if (sessionId == null && sessionIdParam != null) {
+            sessionId = sessionIdParam;
+        }
+        if (body != null && sessionId == null && body.containsKey("session_id")) {
             sessionId = body.get("session_id").toString();
         }
-        if (sessionId == null && body.containsKey("sessionId")) {
+        if (body != null && sessionId == null && body.containsKey("sessionId")) {
             sessionId = body.get("sessionId").toString();
         }
         System.out.println("=== USSD REQUEST START ===");
-        System.out.println("Params - text: '" + text + "', input: '" + input + "', phone: '" + phone + "', phoneNumber: '" + phoneNumber + "'");
+        System.out.println("Params - text: '" + text + "', input: '" + input + "', serviceCode: '" + serviceCode + "', phone: '" + phone + "', phoneNumber: '" + phoneNumber + "'");
         
         try {
             // Extract parameters from body if not in query params
@@ -320,6 +325,9 @@ public class ussdcontroller {
                 if (text == null && body.containsKey("text")) {
                     text = body.get("text").toString();
                 }
+                if (serviceCode == null && body.containsKey("serviceCode")) {
+                    serviceCode = body.get("serviceCode").toString();
+                }
             }
             
             String phoneFinal = phoneNumber != null ? phoneNumber : (phone != null ? phone : "");
@@ -333,7 +341,7 @@ public class ussdcontroller {
             }
             
             // Process and get string response
-            String response = processUssdRequest(inputFinal, phoneFinal, sessionId);
+            String response = processUssdRequest(inputFinal, serviceCode, phoneFinal, sessionId);
             System.out.println("Response: " + response);
             
             // Convert to JSON format
@@ -970,6 +978,10 @@ public class ussdcontroller {
             || "textfood".equals(normalized);
     }
 
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
     private String startTextMeFoodFromSearch(String phone) {
         clearNavigationSession(phone);
         clearTextMeFoodSession(phone);
@@ -1504,7 +1516,7 @@ public class ussdcontroller {
         saveToSession(phone, "tmfRedeemAmount", null);
     }
 
-    private String processUssdRequest(String inputText, String phoneNumber, String sessionId) {
+    private String processUssdRequest(String inputText, String serviceCode, String phoneNumber, String sessionId) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
         
         if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
@@ -1512,8 +1524,9 @@ public class ussdcontroller {
         }
         
         String inputedText = (inputText == null) ? "" : inputText.trim();
+        String dialedCode = hasText(inputedText) ? inputedText : (serviceCode == null ? "" : serviceCode.trim());
 
-        if (isTextMeFoodEntry(inputedText, normalizedPhoneNumber, sessionId)) {
+        if (isTextMeFoodEntry(dialedCode, normalizedPhoneNumber, sessionId)) {
             System.out.println("Routing to Text Me Food Foundation substring flow");
             resetUserSession(normalizedPhoneNumber);
             if (sessionId != null) {
@@ -1525,7 +1538,7 @@ public class ussdcontroller {
             return showTextMeFoodMainMenu();
         }
 
-        if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
+        if (isInitialShortcodeRequest(dialedCode, normalizedPhoneNumber)) {
             System.out.println("✅ Initial USSD request detected");
             clearNavigationSession(normalizedPhoneNumber);
             if (sessionId != null) {
@@ -1547,7 +1560,8 @@ public class ussdcontroller {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
         }
 
-        if (isTextMeFoodEntry(inputedText, normalizedPhoneNumber, sessionId)) {
+        if (isTextMeFoodEntry(inputedText, normalizedPhoneNumber, sessionId)
+            || (!hasText(inputedText) && isTextMeFoodEntry(serviceCode, normalizedPhoneNumber, sessionId))) {
             System.out.println("Routing to Text Me Food Foundation substring flow");
             resetUserSession(normalizedPhoneNumber);
             if (sessionId != null) {
