@@ -225,6 +225,9 @@ public class ussdcontroller {
             "cacRegEmail", "cacRegState", "cacRegOccupation",
             "cacRegNin", "cacRegDob", "cacRegGender", "cacRegLga", "cacRegAddress","ussdSessionId",
             "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
+            "tmfFlow", "tmfField", "tmfPhone", "tmfVerified",
+            "tmfStatePage", "tmfSelectedState", "tmfLgaPage", "tmfSelectedLga",
+            "tmfVendorPage", "tmfSelectedVendor", "tmfRedeemAmount",
         };
 
         // FFS registration keys can be added here if needed
@@ -903,6 +906,563 @@ public class ussdcontroller {
                 return showCBMMenu();
         }
     }
+
+    private static final String TMF_DEMO_PHONE = "08012345678";
+    private static final String TMF_DEMO_PIN = "1234";
+    private static final String TMF_DEMO_BENEFICIARY = "JOHN OBI";
+    private static final String[] TMF_STATES = {
+        "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa",
+        "Benue", "Borno", "Cross River", "Delta", "Ebonyi", "Edo",
+        "Ekiti", "Enugu", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano",
+        "Katsina", "Kebbi", "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger",
+        "Ogun", "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto",
+        "Taraba", "Yobe", "Zamfara", "FCT"
+    };
+    private static final String[] TMF_ENUGU_LGAS = {
+        "Enugu North", "Enugu South", "Enugu East", "Nsukka", "Oji River",
+        "Udi", "Igbo-Etiti", "Igbo-Eze North", "Igbo-Eze South", "Ezeagu"
+    };
+    private static final String[] TMF_ENUGU_NORTH_VENDORS = {
+        "Mama Nkechi Foods", "XYZ Supermarket", "Fresh Basket Foods",
+        "Enugu Food Hub", "ABC Restaurant"
+    };
+
+    private boolean isTextMeFoodEntry(String input) {
+        if (input == null) {
+            return false;
+        }
+        String normalized = input.trim();
+        if (normalized.endsWith("#")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return "*7447*101".equals(normalized) || "7447*101".equals(normalized);
+    }
+
+    private String showTextMeFoodMainMenu() {
+        return "CON TEXT ME FOOD FOUNDATION\n\n" +
+            "Welcome to Text Me Food\n\n" +
+            "1. Beneficiary Services\n" +
+            "2. Find Food Vendors\n" +
+            "3. Check Voucher\n" +
+            "4. Check Benefits\n" +
+            "5. Help\n" +
+            "6. Exit";
+    }
+
+    private String handleTextMeFoodFlow(String phone, String input) {
+        String flow = (String) retrieveFromSession(phone, "tmfFlow");
+        if (flow == null) {
+            saveToSession(phone, "tmfFlow", "main_menu");
+            return showTextMeFoodMainMenu();
+        }
+
+        switch (flow) {
+            case "main_menu":
+                return handleTextMeFoodMainMenu(phone, input);
+            case "beneficiary_phone":
+                return handleTextMeFoodBeneficiaryPhone(phone, input);
+            case "number_not_found":
+                return handleTextMeFoodNumberNotFound(phone, input);
+            case "pin":
+                return handleTextMeFoodPin(phone, input);
+            case "dashboard":
+                return handleTextMeFoodDashboard(phone, input);
+            case "voucher_menu":
+                return handleTextMeFoodVoucherMenu(phone, input);
+            case "benefits_menu":
+                return handleTextMeFoodBenefitsMenu(phone, input);
+            case "state_select":
+                return handleTextMeFoodStateSelection(phone, input);
+            case "lga_select":
+                return handleTextMeFoodLgaSelection(phone, input);
+            case "vendor_select":
+                return handleTextMeFoodVendorSelection(phone, input);
+            case "vendor_profile":
+                return handleTextMeFoodVendorProfile(phone, input);
+            case "redeem_amount":
+                return handleTextMeFoodRedeemAmount(phone, input);
+            case "redeem_confirm":
+                return handleTextMeFoodRedeemConfirm(phone, input);
+            default:
+                clearTextMeFoodSession(phone);
+                saveToSession(phone, "tmfFlow", "main_menu");
+                return showTextMeFoodMainMenu();
+        }
+    }
+
+    private String handleTextMeFoodMainMenu(String phone, String input) {
+        switch (input) {
+            case "1":
+                saveToSession(phone, "tmfFlow", "beneficiary_phone");
+                return "CON BENEFICIARY SERVICES\n\nEnter registered phone number:";
+            case "2":
+                return startTextMeFoodStateSelection(phone);
+            case "3":
+                saveToSession(phone, "tmfFlow", "voucher_menu");
+                return showTextMeFoodVoucher();
+            case "4":
+                saveToSession(phone, "tmfFlow", "benefits_menu");
+                return showTextMeFoodBenefits();
+            case "5":
+                return "END TEXT ME FOOD HELP\n\nFor support, contact the\nfoundation help desk.\n\nDial *7447*101# to restart.";
+            case "6":
+            case "0":
+                clearTextMeFoodSession(phone);
+                return "END Thank you for using\nText Me Food Foundation.";
+            default:
+                return showTextMeFoodMainMenu();
+        }
+    }
+
+    private String handleTextMeFoodBeneficiaryPhone(String phone, String input) {
+        String beneficiaryPhone = normalizePhoneNumber(input);
+        if (TMF_DEMO_PHONE.equals(beneficiaryPhone)) {
+            saveToSession(phone, "tmfPhone", beneficiaryPhone);
+            saveToSession(phone, "tmfFlow", "pin");
+            return "CON TEXT ME FOOD FOUNDATION\n\n" +
+                "Phone: " + beneficiaryPhone + "\n\n" +
+                "Enter 4-digit PIN:";
+        }
+
+        saveToSession(phone, "tmfFlow", "number_not_found");
+        return showTextMeFoodNumberNotFound();
+    }
+
+    private String showTextMeFoodNumberNotFound() {
+        return "CON NUMBER NOT FOUND\n\n" +
+            "Phone number is not registered\n" +
+            "as a Text Me Food beneficiary.\n\n" +
+            "1. Try Again\n" +
+            "2. Find Food Vendors\n" +
+            "3. Help\n" +
+            "4. Exit";
+    }
+
+    private String handleTextMeFoodNumberNotFound(String phone, String input) {
+        switch (input) {
+            case "1":
+                saveToSession(phone, "tmfFlow", "beneficiary_phone");
+                return "CON BENEFICIARY SERVICES\n\nEnter registered phone number:";
+            case "2":
+                return startTextMeFoodStateSelection(phone);
+            case "3":
+                return "END TEXT ME FOOD HELP\n\nYour number must be registered\nby the foundation before voucher\nservices can be used.";
+            case "4":
+            case "0":
+                clearTextMeFoodSession(phone);
+                return "END Thank you for using\nText Me Food Foundation.";
+            default:
+                return showTextMeFoodNumberNotFound();
+        }
+    }
+
+    private String handleTextMeFoodPin(String phone, String input) {
+        if ("0".equals(input)) {
+            clearTextMeFoodSession(phone);
+            return "END Thank you for using\nText Me Food Foundation.";
+        }
+        if (TMF_DEMO_PIN.equals(input)) {
+            saveToSession(phone, "tmfVerified", "true");
+            saveToSession(phone, "tmfFlow", "dashboard");
+            return showTextMeFoodDashboard();
+        }
+
+        return "CON INVALID PIN\n\nEnter 4-digit PIN\nor 0 to exit:";
+    }
+
+    private String showTextMeFoodDashboard() {
+        return "CON VERIFICATION SUCCESSFUL\n\n" +
+            "Welcome, " + TMF_DEMO_BENEFICIARY + "\n\n" +
+            "1. My Voucher\n" +
+            "2. My Benefits\n" +
+            "3. Find Vendors\n" +
+            "4. Redemption Locations\n" +
+            "5. Help\n" +
+            "6. Exit";
+    }
+
+    private String handleTextMeFoodDashboard(String phone, String input) {
+        switch (input) {
+            case "1":
+                saveToSession(phone, "tmfFlow", "voucher_menu");
+                return showTextMeFoodVoucher();
+            case "2":
+                saveToSession(phone, "tmfFlow", "benefits_menu");
+                return showTextMeFoodBenefits();
+            case "3":
+            case "4":
+                return startTextMeFoodStateSelection(phone);
+            case "5":
+                return "END TEXT ME FOOD HELP\n\nVisit an approved vendor or\ncontact the foundation help desk.";
+            case "6":
+            case "0":
+                clearTextMeFoodSession(phone);
+                return "END Thank you for using\nText Me Food Foundation.";
+            default:
+                return showTextMeFoodDashboard();
+        }
+    }
+
+    private String showTextMeFoodVoucher() {
+        return "CON MY VOUCHER\n\n" +
+            "Status: ACTIVE\n" +
+            "Value: NGN 25000\n" +
+            "Used: NGN 10000\n" +
+            "Balance: NGN 15000\n" +
+            "Expiry: 31 DEC 2026\n\n" +
+            "1. Redeem Voucher\n" +
+            "2. Find Vendors\n" +
+            "3. Main Menu\n" +
+            "4. Exit";
+    }
+
+    private String handleTextMeFoodVoucherMenu(String phone, String input) {
+        switch (input) {
+            case "1":
+            case "2":
+                return startTextMeFoodStateSelection(phone);
+            case "3":
+                saveToSession(phone, "tmfFlow", "main_menu");
+                return showTextMeFoodMainMenu();
+            case "4":
+            case "0":
+                clearTextMeFoodSession(phone);
+                return "END Thank you for using\nText Me Food Foundation.";
+            default:
+                return showTextMeFoodVoucher();
+        }
+    }
+
+    private String showTextMeFoodBenefits() {
+        return "CON MY BENEFITS\n\n" +
+            "Beneficiary: " + TMF_DEMO_BENEFICIARY + "\n" +
+            "Programme: TMF FOOD SUPPORT\n" +
+            "Benefit: NGN 25000 Food Voucher\n" +
+            "Status: ACTIVE\n" +
+            "Redeemed: NGN 10000\n" +
+            "Balance: NGN 15000\n\n" +
+            "1. Find Vendor\n" +
+            "2. Voucher Details\n" +
+            "3. Main Menu\n" +
+            "4. Exit";
+    }
+
+    private String handleTextMeFoodBenefitsMenu(String phone, String input) {
+        switch (input) {
+            case "1":
+                return startTextMeFoodStateSelection(phone);
+            case "2":
+                saveToSession(phone, "tmfFlow", "voucher_menu");
+                return showTextMeFoodVoucher();
+            case "3":
+                saveToSession(phone, "tmfFlow", "main_menu");
+                return showTextMeFoodMainMenu();
+            case "4":
+            case "0":
+                clearTextMeFoodSession(phone);
+                return "END Thank you for using\nText Me Food Foundation.";
+            default:
+                return showTextMeFoodBenefits();
+        }
+    }
+
+    private String startTextMeFoodStateSelection(String phone) {
+        saveToSession(phone, "tmfFlow", "state_select");
+        saveToSession(phone, "tmfStatePage", 0);
+        return showTextMeFoodStatePage(0);
+    }
+
+    private String handleTextMeFoodStateSelection(String phone, String input) {
+        int page = getSessionInt(phone, "tmfStatePage", 0);
+        int pageSize = 8;
+        int start = page * pageSize;
+        int end = Math.min(start + pageSize, TMF_STATES.length);
+        int moreOption = end - start + 1;
+        int mainOption = moreOption + (end < TMF_STATES.length ? 1 : 0);
+
+        if (String.valueOf(moreOption).equals(input) && end < TMF_STATES.length) {
+            page++;
+            saveToSession(phone, "tmfStatePage", page);
+            return showTextMeFoodStatePage(page);
+        }
+        if (String.valueOf(mainOption).equals(input) || "0".equals(input)) {
+            saveToSession(phone, "tmfFlow", "main_menu");
+            return showTextMeFoodMainMenu();
+        }
+
+        try {
+            int selected = Integer.parseInt(input);
+            if (selected < 1 || selected > (end - start)) {
+                return showTextMeFoodStatePage(page);
+            }
+            String state = TMF_STATES[start + selected - 1];
+            saveToSession(phone, "tmfSelectedState", state);
+            saveToSession(phone, "tmfFlow", "lga_select");
+            saveToSession(phone, "tmfLgaPage", 0);
+            return showTextMeFoodLgaPage(phone, 0);
+        } catch (NumberFormatException e) {
+            return showTextMeFoodStatePage(page);
+        }
+    }
+
+    private String showTextMeFoodStatePage(int page) {
+        int pageSize = 8;
+        int start = page * pageSize;
+        int end = Math.min(start + pageSize, TMF_STATES.length);
+        StringBuilder menu = new StringBuilder("CON FIND FOOD VENDORS\n\nSelect State:\n");
+        for (int i = start; i < end; i++) {
+            menu.append(i - start + 1).append(". ").append(TMF_STATES[i]).append("\n");
+        }
+        int option = end - start + 1;
+        if (end < TMF_STATES.length) {
+            menu.append(option).append(". More\n");
+            option++;
+        }
+        menu.append(option).append(". Main Menu");
+        return menu.toString();
+    }
+
+    private String handleTextMeFoodLgaSelection(String phone, String input) {
+        String state = (String) retrieveFromSession(phone, "tmfSelectedState");
+        if (!"Enugu".equalsIgnoreCase(state)) {
+            if ("1".equals(input)) {
+                return startTextMeFoodStateSelection(phone);
+            }
+            if ("0".equals(input)) {
+                saveToSession(phone, "tmfFlow", "main_menu");
+                return showTextMeFoodMainMenu();
+            }
+            return "CON " + state.toUpperCase() + " STATE\n\n" +
+                "No demo vendors listed yet.\n\n" +
+                "1. Select another state\n" +
+                "0. Main Menu";
+        }
+
+        int page = getSessionInt(phone, "tmfLgaPage", 0);
+        int pageSize = 6;
+        int start = page * pageSize;
+        int end = Math.min(start + pageSize, TMF_ENUGU_LGAS.length);
+        int moreOption = end - start + 1;
+        int backOption = moreOption + (end < TMF_ENUGU_LGAS.length ? 1 : 0);
+
+        if (String.valueOf(moreOption).equals(input) && end < TMF_ENUGU_LGAS.length) {
+            page++;
+            saveToSession(phone, "tmfLgaPage", page);
+            return showTextMeFoodLgaPage(phone, page);
+        }
+        if (String.valueOf(backOption).equals(input) || "0".equals(input)) {
+            return startTextMeFoodStateSelection(phone);
+        }
+
+        try {
+            int selected = Integer.parseInt(input);
+            if (selected < 1 || selected > (end - start)) {
+                return showTextMeFoodLgaPage(phone, page);
+            }
+            String lga = TMF_ENUGU_LGAS[start + selected - 1];
+            saveToSession(phone, "tmfSelectedLga", lga);
+            saveToSession(phone, "tmfFlow", "vendor_select");
+            saveToSession(phone, "tmfVendorPage", 0);
+            return showTextMeFoodVendorPage(phone, 0);
+        } catch (NumberFormatException e) {
+            return showTextMeFoodLgaPage(phone, page);
+        }
+    }
+
+    private String showTextMeFoodLgaPage(String phone, int page) {
+        String state = (String) retrieveFromSession(phone, "tmfSelectedState");
+        if (!"Enugu".equalsIgnoreCase(state)) {
+            return "CON " + state.toUpperCase() + " STATE\n\n" +
+                "No demo vendors listed yet.\n\n" +
+                "1. Select another state\n" +
+                "0. Main Menu";
+        }
+
+        int pageSize = 6;
+        int start = page * pageSize;
+        int end = Math.min(start + pageSize, TMF_ENUGU_LGAS.length);
+        StringBuilder menu = new StringBuilder("CON ENUGU STATE\n\nSelect LGA:\n");
+        for (int i = start; i < end; i++) {
+            menu.append(i - start + 1).append(". ").append(TMF_ENUGU_LGAS[i]).append("\n");
+        }
+        int option = end - start + 1;
+        if (end < TMF_ENUGU_LGAS.length) {
+            menu.append(option).append(". More\n");
+            option++;
+        }
+        menu.append(option).append(". Back");
+        return menu.toString();
+    }
+
+    private String handleTextMeFoodVendorSelection(String phone, String input) {
+        String lga = (String) retrieveFromSession(phone, "tmfSelectedLga");
+        if (!"Enugu North".equalsIgnoreCase(lga)) {
+            if ("1".equals(input)) {
+                saveToSession(phone, "tmfFlow", "lga_select");
+                return showTextMeFoodLgaPage(phone, getSessionInt(phone, "tmfLgaPage", 0));
+            }
+            if ("0".equals(input)) {
+                saveToSession(phone, "tmfFlow", "main_menu");
+                return showTextMeFoodMainMenu();
+            }
+            return "CON " + lga.toUpperCase() + "\n\n" +
+                "No demo vendors listed yet.\n\n" +
+                "1. Back\n" +
+                "0. Main Menu";
+        }
+
+        int page = getSessionInt(phone, "tmfVendorPage", 0);
+        if ("6".equals(input)) {
+            saveToSession(phone, "tmfFlow", "lga_select");
+            return showTextMeFoodLgaPage(phone, getSessionInt(phone, "tmfLgaPage", 0));
+        }
+
+        try {
+            int selected = Integer.parseInt(input);
+            if (selected < 1 || selected > TMF_ENUGU_NORTH_VENDORS.length) {
+                return showTextMeFoodVendorPage(phone, page);
+            }
+            String vendor = TMF_ENUGU_NORTH_VENDORS[selected - 1];
+            saveToSession(phone, "tmfSelectedVendor", vendor);
+            saveToSession(phone, "tmfFlow", "vendor_profile");
+            return showTextMeFoodVendorProfile(vendor);
+        } catch (NumberFormatException e) {
+            return showTextMeFoodVendorPage(phone, page);
+        }
+    }
+
+    private String showTextMeFoodVendorPage(String phone, int page) {
+        String lga = (String) retrieveFromSession(phone, "tmfSelectedLga");
+        if (!"Enugu North".equalsIgnoreCase(lga)) {
+            return "CON " + lga.toUpperCase() + "\n\n" +
+                "No demo vendors listed yet.\n\n" +
+                "1. Back\n" +
+                "0. Main Menu";
+        }
+
+        StringBuilder menu = new StringBuilder("CON ENUGU NORTH\n\nPARTICIPATING VENDORS\n\n");
+        for (int i = 0; i < TMF_ENUGU_NORTH_VENDORS.length; i++) {
+            menu.append(i + 1).append(". ").append(TMF_ENUGU_NORTH_VENDORS[i]).append("\n");
+        }
+        menu.append("6. Back");
+        return menu.toString();
+    }
+
+    private String handleTextMeFoodVendorProfile(String phone, String input) {
+        String vendor = (String) retrieveFromSession(phone, "tmfSelectedVendor");
+        if (vendor == null) {
+            vendor = "Mama Nkechi Foods";
+        }
+
+        switch (input) {
+            case "1":
+                saveToSession(phone, "tmfFlow", "redeem_amount");
+                return "CON REDEEM VOUCHER\n\n" +
+                    "Vendor: " + vendor.toUpperCase() + "\n\n" +
+                    "Enter amount to redeem:";
+            case "2":
+                return "END VENDOR CODE\n\n" +
+                    vendor.toUpperCase() + "\n" +
+                    "Code: TMF-EN-001";
+            case "3":
+                saveToSession(phone, "tmfFlow", "vendor_select");
+                return showTextMeFoodVendorPage(phone, getSessionInt(phone, "tmfVendorPage", 0));
+            case "4":
+            case "0":
+                saveToSession(phone, "tmfFlow", "lga_select");
+                return showTextMeFoodLgaPage(phone, getSessionInt(phone, "tmfLgaPage", 0));
+            default:
+                return showTextMeFoodVendorProfile(vendor);
+        }
+    }
+
+    private String showTextMeFoodVendorProfile(String vendor) {
+        return "CON " + vendor.toUpperCase() + "\n\n" +
+            "Status: ACTIVE\n" +
+            "Location: Ogui Road, Enugu North\n" +
+            "Accepts: TMF Food Voucher\n" +
+            "Cash Redemption: YES\n" +
+            "Food Redemption: YES\n" +
+            "Hours: 8AM-8PM\n\n" +
+            "1. Redeem Here\n" +
+            "2. Get Vendor Code\n" +
+            "3. More Vendors\n" +
+            "4. Back";
+    }
+
+    private String handleTextMeFoodRedeemAmount(String phone, String input) {
+        String amount = input == null ? "" : input.replaceAll("[^0-9]", "");
+        long parsedAmount;
+        try {
+            parsedAmount = amount.isEmpty() ? 0 : Long.parseLong(amount);
+        } catch (NumberFormatException e) {
+            parsedAmount = 0;
+        }
+        if (parsedAmount <= 0) {
+            return "CON Invalid amount.\n\nEnter amount to redeem:";
+        }
+
+        saveToSession(phone, "tmfRedeemAmount", amount);
+        saveToSession(phone, "tmfFlow", "redeem_confirm");
+        return "CON REDEEM VOUCHER\n\n" +
+            "Amount: NGN " + amount + "\n\n" +
+            "Confirm redemption?\n" +
+            "1. Yes\n" +
+            "2. No";
+    }
+
+    private String handleTextMeFoodRedeemConfirm(String phone, String input) {
+        String amount = (String) retrieveFromSession(phone, "tmfRedeemAmount");
+        if ("1".equals(input)) {
+            clearTextMeFoodSession(phone);
+            return "END SAMPLE REDEMPTION\n\n" +
+                "Amount: NGN " + amount + "\n" +
+                "Previous Balance: NGN 15000\n" +
+                "New Balance: NGN 10000\n" +
+                "Transaction ID: TMF482913\n\n" +
+                "No live redemption was processed.";
+        }
+        if ("2".equals(input) || "0".equals(input)) {
+            saveToSession(phone, "tmfFlow", "vendor_profile");
+            saveToSession(phone, "tmfRedeemAmount", null);
+            String vendor = (String) retrieveFromSession(phone, "tmfSelectedVendor");
+            return showTextMeFoodVendorProfile(vendor != null ? vendor : "Mama Nkechi Foods");
+        }
+        return "CON Confirm redemption?\n1. Yes\n2. No";
+    }
+
+    private int getSessionInt(String phone, String key, int defaultValue) {
+        Object value = retrieveFromSession(phone, key);
+        if (value instanceof Integer) {
+            return (Integer) value;
+        }
+        if (value instanceof Long) {
+            return ((Long) value).intValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                return defaultValue;
+            }
+        }
+        return defaultValue;
+    }
+
+    private void clearTextMeFoodSession(String phone) {
+        saveToSession(phone, "tmfFlow", null);
+        saveToSession(phone, "tmfField", null);
+        saveToSession(phone, "tmfPhone", null);
+        saveToSession(phone, "tmfVerified", null);
+        saveToSession(phone, "tmfStatePage", null);
+        saveToSession(phone, "tmfSelectedState", null);
+        saveToSession(phone, "tmfLgaPage", null);
+        saveToSession(phone, "tmfSelectedLga", null);
+        saveToSession(phone, "tmfVendorPage", null);
+        saveToSession(phone, "tmfSelectedVendor", null);
+        saveToSession(phone, "tmfRedeemAmount", null);
+    }
+
     private String processUssdRequest(String inputText, String phoneNumber, String sessionId) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
         
@@ -911,6 +1471,18 @@ public class ussdcontroller {
         }
         
         String inputedText = (inputText == null) ? "" : inputText.trim();
+
+        if (isTextMeFoodEntry(inputedText)) {
+            System.out.println("Routing to Text Me Food Foundation substring flow");
+            resetUserSession(normalizedPhoneNumber);
+            if (sessionId != null) {
+                saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
+            }
+            saveToSession(normalizedPhoneNumber, "menuShown", "true");
+            saveToSession(normalizedPhoneNumber, "lastInteraction", System.currentTimeMillis());
+            saveToSession(normalizedPhoneNumber, "tmfFlow", "main_menu");
+            return showTextMeFoodMainMenu();
+        }
 
         if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
             System.out.println("✅ Initial USSD request detected");
@@ -934,6 +1506,18 @@ public class ussdcontroller {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
         }
 
+        if (isTextMeFoodEntry(inputedText)) {
+            System.out.println("Routing to Text Me Food Foundation substring flow");
+            resetUserSession(normalizedPhoneNumber);
+            if (sessionId != null) {
+                saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
+            }
+            saveToSession(normalizedPhoneNumber, "menuShown", "true");
+            saveToSession(normalizedPhoneNumber, "lastInteraction", System.currentTimeMillis());
+            saveToSession(normalizedPhoneNumber, "tmfFlow", "main_menu");
+            return showTextMeFoodMainMenu();
+        }
+
         // detect if input is phone number
         if (inputedText.equals(normalizedPhoneNumber) || inputedText.equals(phoneNumber)) {
             System.out.println("⚠️ Detected phone number as input - ignoring");
@@ -955,7 +1539,7 @@ public class ussdcontroller {
             return HandleLevel1(normalizedPhoneNumber, new String[0], true);
         }
 
-        String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.currentTimeMillis()/1000;
+        String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.nanoTime();
         if (isDuplicateRequest(requestId, inputedText)) {
             return "CON Processing your request...";
         }
@@ -985,6 +1569,11 @@ public class ussdcontroller {
         if (nabtebFlow != null) {
             System.out.println("Routing to NABTEB flow: " + nabtebFlow);
             return handleNABTEBRegistrationFlow(normalizedPhoneNumber, inputedText);
+        }
+        String tmfFlow = (String) retrieveFromSession(normalizedPhoneNumber, "tmfFlow");
+        if (tmfFlow != null) {
+            System.out.println("Routing to Text Me Food flow: " + tmfFlow);
+            return handleTextMeFoodFlow(normalizedPhoneNumber, inputedText);
         }
         // cbm movement flow check
         if (CBM_ENABLED && (isCbmSpecialNumber(normalizedPhoneNumber) || retrieveFromSession(normalizedPhoneNumber, "cbmFlow") != null)) {
@@ -5688,4 +6277,3 @@ public class ussdcontroller {
     
    
 }
-
