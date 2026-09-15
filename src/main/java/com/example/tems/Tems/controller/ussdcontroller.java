@@ -2,6 +2,8 @@ package com.example.tems.Tems.controller;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.tems.Tems.client.CbmApiClient;
 import com.example.tems.Tems.client.CbmUssdRelayClient;
 import com.example.tems.Tems.client.SmsSendRequest;
@@ -68,6 +71,7 @@ public class ussdcontroller {
     private final NinLookupService ninLookupService;
     private final CbmApiClient cbmApiClient;
     private final CbmUssdRelayClient cbmUssdRelayClient;
+    private static final ObjectMapper REQUEST_BODY_MAPPER = new ObjectMapper();
 
    
 
@@ -283,7 +287,6 @@ public class ussdcontroller {
     
     @PostMapping(
         value = "/ussd",
-        consumes = { MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE },
         produces = MediaType.APPLICATION_JSON_VALUE
     )
     public Map<String, Object> handleUssdRequest(
@@ -294,8 +297,9 @@ public class ussdcontroller {
         @RequestParam(name = "phone", required = false) String phone,
         @RequestParam(name = "session_id", required = false) String sessionId,
         @RequestParam(name = "sessionId", required = false) String sessionIdParam,
-        @RequestBody(required = false) Map<String, Object> body
+        @RequestBody(required = false) String rawBody
     ) {
+        Map<String, Object> body = parseRequestBody(rawBody);
 
         if (sessionId == null && sessionIdParam != null) {
             sessionId = sessionIdParam;
@@ -313,20 +317,20 @@ public class ussdcontroller {
             // Extract parameters from body if not in query params
             if (body != null) {
                 System.out.println("Body: " + body);
-                if (phoneNumber == null && body.containsKey("phoneNumber")) {
-                    phoneNumber = body.get("phoneNumber").toString();
+                if (phoneNumber == null) {
+                    phoneNumber = getBodyValue(body, "phoneNumber", "msisdn", "mobile", "caller", "subscriber");
                 }
-                if (phone == null && body.containsKey("phone")) {
-                    phone = body.get("phone").toString();
+                if (phone == null) {
+                    phone = getBodyValue(body, "phone");
                 }
-                if (input == null && body.containsKey("input")) {
-                    input = body.get("input").toString();
+                if (input == null) {
+                    input = getBodyValue(body, "input", "ussdString", "ussd_string", "message");
                 }
-                if (text == null && body.containsKey("text")) {
-                    text = body.get("text").toString();
+                if (text == null) {
+                    text = getBodyValue(body, "text");
                 }
-                if (serviceCode == null && body.containsKey("serviceCode")) {
-                    serviceCode = body.get("serviceCode").toString();
+                if (serviceCode == null) {
+                    serviceCode = getBodyValue(body, "serviceCode", "service_code", "shortCode", "shortcode");
                 }
             }
             
@@ -406,6 +410,53 @@ public class ussdcontroller {
         response.put("message", message);
         return response;
     }
+
+    private Map<String, Object> parseRequestBody(String rawBody) {
+        Map<String, Object> parsed = new HashMap<>();
+        if (rawBody == null || rawBody.trim().isEmpty()) {
+            return parsed;
+        }
+
+        String trimmed = rawBody.trim();
+        if (trimmed.startsWith("{")) {
+            try {
+                Map<?, ?> json = REQUEST_BODY_MAPPER.readValue(trimmed, Map.class);
+                for (Map.Entry<?, ?> entry : json.entrySet()) {
+                    if (entry.getKey() != null && entry.getValue() != null) {
+                        parsed.put(entry.getKey().toString(), entry.getValue());
+                    }
+                }
+                return parsed;
+            } catch (Exception e) {
+                System.err.println("Unable to parse USSD JSON body: " + e.getMessage());
+            }
+        }
+
+        for (String pair : trimmed.split("&")) {
+            if (pair.isEmpty() || !pair.contains("=")) {
+                continue;
+            }
+            String[] parts = pair.split("=", 2);
+            String key = URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
+            String value = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+            parsed.put(key, value);
+        }
+        return parsed;
+    }
+
+    private String getBodyValue(Map<String, Object> body, String... keys) {
+        if (body == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object value = body.get(key);
+            if (value != null) {
+                return value.toString();
+            }
+        }
+        return null;
+    }
+
     private boolean isInitialShortcodeRequest(String input, String phoneNumber) {
         if (input == null) return false;
         
@@ -915,7 +966,15 @@ public class ussdcontroller {
         }
     }
 
-    private static final String TMF_DEMO_PHONE = "08012345678";
+    private static final String TMF_DEMO_PHONE = "07042729119";
+    private static final Set<String> TMF_TEST_PHONE_NUMBERS = Set.of(
+        "07042729119",
+        "08142160285",
+        "07026448661",
+        "07038313499",
+        "08037033784",
+        "08131975497"
+    );
     private static final String TMF_DEMO_PIN = "1234";
     private static final String TMF_DEMO_BENEFICIARY = "JOHN OBI";
     private static final String[] TMF_STATES = {
@@ -994,7 +1053,7 @@ public class ussdcontroller {
     private String showTextMeFoodMainMenu() {
         return "CON TEXT ME FOOD FOUNDATION\n\n" +
             "Welcome to Text Me Food\n\n" +
-            "1. Beneficiary Services\n" +
+            "1. Join Text Me Food\n" +
             "2. Find Food Vendors\n" +
             "3. Check Voucher\n" +
             "4. Check Benefits\n" +
@@ -1046,8 +1105,15 @@ public class ussdcontroller {
     private String handleTextMeFoodMainMenu(String phone, String input) {
         switch (input) {
             case "1":
+                if (TMF_TEST_PHONE_NUMBERS.contains(phone)) {
+                    saveToSession(phone, "tmfPhone", phone);
+                    saveToSession(phone, "tmfFlow", "pin");
+                    return "CON JOIN TEXT ME FOOD\n\n" +
+                        "Phone: " + phone + "\n\n" +
+                        "Enter 4-digit PIN:";
+                }
                 saveToSession(phone, "tmfFlow", "beneficiary_phone");
-                return "CON BENEFICIARY SERVICES\n\nEnter registered phone number:";
+                return "CON JOIN TEXT ME FOOD\n\nEnter registered phone number:";
             case "2":
                 return startTextMeFoodStateSelection(phone);
             case "3":
@@ -1069,7 +1135,7 @@ public class ussdcontroller {
 
     private String handleTextMeFoodBeneficiaryPhone(String phone, String input) {
         String beneficiaryPhone = normalizePhoneNumber(input);
-        if (TMF_DEMO_PHONE.equals(beneficiaryPhone)) {
+        if (TMF_TEST_PHONE_NUMBERS.contains(beneficiaryPhone)) {
             saveToSession(phone, "tmfPhone", beneficiaryPhone);
             saveToSession(phone, "tmfFlow", "pin");
             return "CON TEXT ME FOOD FOUNDATION\n\n" +
@@ -1095,7 +1161,7 @@ public class ussdcontroller {
         switch (input) {
             case "1":
                 saveToSession(phone, "tmfFlow", "beneficiary_phone");
-                return "CON BENEFICIARY SERVICES\n\nEnter registered phone number:";
+                return "CON JOIN TEXT ME FOOD\n\nEnter registered phone number:";
             case "2":
                 return startTextMeFoodStateSelection(phone);
             case "3":
