@@ -16,16 +16,20 @@ import java.util.stream.Collectors;
 
 import javax.print.attribute.standard.MediaSize.Other;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -290,9 +294,9 @@ public class ussdcontroller {
     @RequestMapping(
         value = "/ussd",
         method = {RequestMethod.GET, RequestMethod.POST},
-        produces = MediaType.APPLICATION_JSON_VALUE
+        produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_PLAIN_VALUE}
     )
-    public Map<String, Object> handleUssdRequest(
+    public ResponseEntity<?> handleUssdRequest(
         @RequestParam(name = "text", required = false) String text,
         @RequestParam(name = "input", required = false) String input,
         @RequestParam(name = "serviceCode", required = false) String serviceCode,
@@ -300,9 +304,13 @@ public class ussdcontroller {
         @RequestParam(name = "phone", required = false) String phone,
         @RequestParam(name = "session_id", required = false) String sessionId,
         @RequestParam(name = "sessionId", required = false) String sessionIdParam,
-        @RequestBody(required = false) String rawBody
+        @RequestHeader(name = "Accept", required = false) String acceptHeader,
+        @RequestHeader(name = "Content-Type", required = false) String contentTypeHeader,
+        @RequestBody(required = false) String rawBody,
+        HttpServletRequest request
     ) {
         Map<String, Object> body = parseRequestBody(rawBody);
+        boolean plainResponse = shouldReturnPlainUssd(request, acceptHeader, contentTypeHeader);
 
         if (sessionId == null && sessionIdParam != null) {
             sessionId = sessionIdParam;
@@ -344,17 +352,15 @@ public class ussdcontroller {
             
             if (phoneFinal.isEmpty()) {
                 System.err.println("❌ Missing phone number");
-                return createUssdResponse(false, "Invalid request: missing phone number.");
+                return formatUssdResponse("END Invalid request: missing phone number.", plainResponse);
             }
             
             // Process and get string response
             String response = processUssdRequest(inputFinal, serviceCode, phoneFinal, sessionId);
             System.out.println("Response: " + response);
             
-            // Convert to JSON format
-            Map<String, Object> jsonResponse = convertToJsonResponse(response);
             System.out.println("=== USSD REQUEST END ===");
-            return jsonResponse;
+            return formatUssdResponse(response, plainResponse);
             
         } catch (Exception e) {
             System.err.println("❌❌❌ FATAL ERROR in USSD request ❌❌❌");
@@ -364,7 +370,7 @@ public class ussdcontroller {
             e.printStackTrace();
             System.out.println("=== USSD REQUEST END (WITH ERROR) ===");
             
-            return createUssdResponse(false, "Service temporarily unavailable. Please try again.");
+            return formatUssdResponse("END Service temporarily unavailable. Please try again.", plainResponse);
         }
     }
     @PostMapping("/test-redis")
@@ -412,6 +418,26 @@ public class ussdcontroller {
         response.put("continue", shouldContinue);
         response.put("message", message);
         return response;
+    }
+
+    private ResponseEntity<?> formatUssdResponse(String response, boolean plainResponse) {
+        if (plainResponse) {
+            return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(response);
+        }
+        return ResponseEntity.ok(convertToJsonResponse(response));
+    }
+
+    private boolean shouldReturnPlainUssd(HttpServletRequest request, String acceptHeader, String contentTypeHeader) {
+        String method = request == null ? "" : request.getMethod();
+        if ("GET".equalsIgnoreCase(method)) {
+            return true;
+        }
+        if (contentTypeHeader != null && contentTypeHeader.toLowerCase().contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE)) {
+            return true;
+        }
+        return acceptHeader != null && acceptHeader.toLowerCase().contains(MediaType.TEXT_PLAIN_VALUE);
     }
 
     private Map<String, Object> parseRequestBody(String rawBody) {
@@ -1040,17 +1066,32 @@ public class ussdcontroller {
             || "textfood".equals(normalized);
     }
 
+    private boolean isTextMeFoodAllowedPhone(String phone) {
+        return TMF_TEST_PHONE_NUMBERS.contains(normalizePhoneNumber(phone));
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
     }
 
     private String startTextMeFoodFromSearch(String phone) {
+        if (!isTextMeFoodAllowedPhone(phone)) {
+            return "END No matches for: Text Me Food";
+        }
         clearNavigationSession(phone);
         clearTextMeFoodSession(phone);
         saveToSession(phone, "menuShown", "true");
         saveToSession(phone, "lastInteraction", System.currentTimeMillis());
         saveToSession(phone, "tmfFlow", "main_menu");
         return showTextMeFoodMainMenu();
+    }
+
+    private String routeTextMeFoodDeniedToMainMenu(String phone, String sessionId) {
+        resetUserSession(phone);
+        if (sessionId != null) {
+            saveToSession(phone, "ussdSessionId", sessionId);
+        }
+        return HandleLevel1(phone, new String[0], true);
     }
 
     private String showTextMeFoodMainMenu() {
@@ -1108,7 +1149,7 @@ public class ussdcontroller {
     private String handleTextMeFoodMainMenu(String phone, String input) {
         switch (input) {
             case "1":
-                if (TMF_TEST_PHONE_NUMBERS.contains(phone)) {
+                if (isTextMeFoodAllowedPhone(phone)) {
                     saveToSession(phone, "tmfPhone", phone);
                     saveToSession(phone, "tmfFlow", "pin");
                     return "CON JOIN TEXT ME FOOD\n\n" +
@@ -1138,7 +1179,7 @@ public class ussdcontroller {
 
     private String handleTextMeFoodBeneficiaryPhone(String phone, String input) {
         String beneficiaryPhone = normalizePhoneNumber(input);
-        if (TMF_TEST_PHONE_NUMBERS.contains(beneficiaryPhone)) {
+        if (isTextMeFoodAllowedPhone(beneficiaryPhone)) {
             saveToSession(phone, "tmfPhone", beneficiaryPhone);
             saveToSession(phone, "tmfFlow", "pin");
             return "CON TEXT ME FOOD FOUNDATION\n\n" +
@@ -1596,6 +1637,10 @@ public class ussdcontroller {
         String dialedCode = hasText(inputedText) ? inputedText : (serviceCode == null ? "" : serviceCode.trim());
 
         if (isTextMeFoodEntry(dialedCode, normalizedPhoneNumber, sessionId)) {
+            if (!isTextMeFoodAllowedPhone(normalizedPhoneNumber)) {
+                System.out.println("Text Me Food substring denied for non-test phone");
+                return routeTextMeFoodDeniedToMainMenu(normalizedPhoneNumber, sessionId);
+            }
             System.out.println("Routing to Text Me Food Foundation substring flow");
             resetUserSession(normalizedPhoneNumber);
             if (sessionId != null) {
@@ -1631,6 +1676,10 @@ public class ussdcontroller {
 
         if (isTextMeFoodEntry(inputedText, normalizedPhoneNumber, sessionId)
             || (!hasText(inputedText) && isTextMeFoodEntry(serviceCode, normalizedPhoneNumber, sessionId))) {
+            if (!isTextMeFoodAllowedPhone(normalizedPhoneNumber)) {
+                System.out.println("Text Me Food substring denied for non-test phone");
+                return routeTextMeFoodDeniedToMainMenu(normalizedPhoneNumber, sessionId);
+            }
             System.out.println("Routing to Text Me Food Foundation substring flow");
             resetUserSession(normalizedPhoneNumber);
             if (sessionId != null) {
@@ -1696,6 +1745,10 @@ public class ussdcontroller {
         }
         String tmfFlow = (String) retrieveFromSession(normalizedPhoneNumber, "tmfFlow");
         if (tmfFlow != null) {
+            if (!isTextMeFoodAllowedPhone(normalizedPhoneNumber)) {
+                System.out.println("Text Me Food flow denied for non-test phone");
+                return routeTextMeFoodDeniedToMainMenu(normalizedPhoneNumber, sessionId);
+            }
             System.out.println("Routing to Text Me Food flow: " + tmfFlow);
             return handleTextMeFoodFlow(normalizedPhoneNumber, inputedText);
         }
