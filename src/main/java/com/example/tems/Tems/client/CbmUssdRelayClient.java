@@ -65,26 +65,25 @@ public class CbmUssdRelayClient {
     // Once we see one real response in the logs, we'll know the exact shape.
     @SuppressWarnings("unchecked")
     private String extractMessage(Map<String, Object> body) {
-        if (body == null) return "END CBM registration is temporarily unavailable. Please try again shortly.";
-
-        Object candidate = body.get("message");
-        if (candidate == null) candidate = body.get("reply");
-        if (candidate == null) candidate = body.get("response");
-        if (candidate == null) candidate = body.get("text");
-
-        if (candidate instanceof String) {
-            String msg = (String) candidate;
-            // If CBM already prefixes with CON/END, pass through as-is.
-            if (msg.startsWith("CON ") || msg.startsWith("END ")) {
-                return msg;
-            }
-            // Otherwise infer from a separate "continue"/"is_final" style flag if present.
-            Object continueFlag = body.get("continue");
-            boolean shouldContinue = Boolean.TRUE.equals(continueFlag);
-            return (shouldContinue ? "CON " : "END ") + msg;
+        if (body == null || !Boolean.TRUE.equals(body.get("success"))) {
+            System.err.println("⚠️ CBM relay - unsuccessful or empty response: " + body);
+            return "END CBM registration is temporarily unavailable. Please try again shortly.";
         }
 
-        System.err.println("⚠️ CBM relay - unrecognized response shape: " + body);
-        return "END CBM registration is temporarily unavailable. Please try again shortly.";
+        Map<String, Object> data = (Map<String, Object>) body.get("data");
+        if (data == null) {
+            System.err.println("⚠️ CBM relay - missing data field: " + body);
+            return "END CBM registration is temporarily unavailable. Please try again shortly.";
+        }
+
+        String action = (String) data.get("action");   // "CON" or "END"
+        String message = (String) data.get("message");
+
+        if (action == null || message == null) {
+            System.err.println("⚠️ CBM relay - missing action/message: " + data);
+            return "END CBM registration is temporarily unavailable. Please try again shortly.";
+        }
+
+        return action + " " + message;
     }
 }
