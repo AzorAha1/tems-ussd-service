@@ -222,8 +222,7 @@ public class ussdcontroller {
             "ffsRegName", "ffsRegAddress", "ffsRegState",
             "ffsRegOccupation", "ffsRegOrg", "cacRegType", "cacRegField",
             "cacRegName", "cacRegEmail", "cacRegState", "cacRegOccupation",
-            "cacVerifyType","cbmFlow", "cbmField", "cbmFirstName", "cbmLastName", "cbmEmail", 
-            "cbmVin", "cbmGender", "cbmOrgName", "cbmSupportType", "cbmSpread", "cbmReferral", "cbmUssdRelayActive",
+            "cacVerifyType","cbmOrgName", "cbmSupportType", "cbmSpread", "cbmReferral", "cbmUssdRelayActive",
             "nabtebFlow", "nabtebSubMenu", "nabtebRegField",
             "nabtebRegType", "nabtebFullName", "nabtebPhone",
             "nabtebDob", "nabtebGender", "nabtebState",
@@ -261,15 +260,13 @@ public class ussdcontroller {
     // show cbm menu
     private String showCBMMenu() {
         return "CON CITY BOY MOVEMENT\n\n" +
-            "1. Join Movement\n" +
+            "1. Join The Movement\n" +
             "2. About\n" +
             "3. Support Group Reg\n" +
             "4. Achievements\n" +
             "5. News\n" +
             "6. Contacts\n" +
             "7. Updates\n" +
-            "8. Check Membership\n" +
-            "9. Register for CBM\n" +
             "0. Exit";
     }
 
@@ -532,95 +529,7 @@ public class ussdcontroller {
         System.out.println("❌ Not an initial request - normalized: '" + normalizedInput + "'");
         return false;
     }
-    private String handleCBMJoinMovement(String phone, String input) {
-        String currentField = (String) retrieveFromSession(phone, "cbmField");
-        if (currentField == null) {
-            currentField = "firstName";
-            saveToSession(phone, "cbmField", currentField);
-        }
-
-        if (input == null || input.trim().isEmpty()) {
-            if ("vin".equals(currentField)) {
-                // VIN is optional — empty just means skip
-            } else {
-                return "CON Field cannot be empty. Please enter " + getCbmFieldDisplayName(currentField) + ":";
-            }
-        }
-        String value = input == null ? "" : input.trim();
-
-        switch (currentField) {
-            case "firstName":
-                if (!isValidName(value)) {
-                    return "CON Invalid name. Please enter First Name:";
-                }
-                saveToSession(phone, "cbmFirstName", value);
-                saveToSession(phone, "cbmField", "lastName");
-                return "CON Enter Last Name:";
-
-            case "lastName":
-                if (!isValidName(value)) {
-                    return "CON Invalid name. Please enter Last Name:";
-                }
-                saveToSession(phone, "cbmLastName", value);
-                saveToSession(phone, "cbmField", "email");
-                return "CON Enter Email Address:";
-
-            case "email":
-                if (!isValidEmail(value)) {
-                    return "CON Invalid email. Please enter a valid Email Address:";
-                }
-                saveToSession(phone, "cbmEmail", value);
-                saveToSession(phone, "cbmField", "vin");
-                return "CON Enter Voters Card VIN\n(Optional — enter 0 to skip):";
-
-            case "vin":
-                saveToSession(phone, "cbmVin", ("0".equals(value) || value.isEmpty()) ? null : value);
-                saveToSession(phone, "cbmField", "gender");
-                return "CON Select Gender:\n1. Male\n2. Female";
-
-            case "gender":
-                String gender;
-                switch (value) {
-                    case "1": gender = "MALE"; break;
-                    case "2": gender = "FEMALE"; break;
-                    default: return "CON Invalid choice.\n\nSelect Gender:\n1. Male\n2. Female";
-                }
-                saveToSession(phone, "cbmGender", gender);
-                return saveCBMRegistration(phone);
-
-            default:
-                return "END Invalid form state.";
-        }
-    }
-    private String saveCBMRegistration(String phone) {
-        try {
-            CbmRegistration reg = new CbmRegistration();
-            reg.setPhoneNumber(phone);
-            reg.setReferenceId(generateCBMReferenceId());
-            reg.setFirstName((String) retrieveFromSession(phone, "cbmFirstName"));
-            reg.setLastName((String) retrieveFromSession(phone, "cbmLastName"));
-            reg.setEmail((String) retrieveFromSession(phone, "cbmEmail"));
-            reg.setVin((String) retrieveFromSession(phone, "cbmVin"));
-            reg.setGender((String) retrieveFromSession(phone, "cbmGender"));
-            reg.setCreatedAt(LocalDateTime.now());
-
-            cbmRegistrationRepository.save(reg);
-            clearCBMJoinSession(phone);
-
-            return "END You have successfully joined\n" +
-                "the City Boy Movement.\n\n" +
-                "Invite more people to join and\n" +
-                "participate to contribute your\n" +
-                "quota. Log on to www.cbm.com\n\n" +
-                "Ref: " + reg.getReferenceId();
-        } catch (Exception e) {
-            System.err.println("Error saving CBM registration: " + e.getMessage());
-            return "END Error saving registration. Please try again.";
-        }
-    }
-    private String generateCBMReferenceId() {
-        return "CBM-REG-" + System.currentTimeMillis() % 1000000 + "-" + (int)(Math.random() * 900 + 100);
-    }
+    
     private void clearCBMJoinSession(String phone) {
         saveToSession(phone, "cbmFlow", null);
         saveToSession(phone, "cbmField", null);
@@ -630,16 +539,16 @@ public class ussdcontroller {
         saveToSession(phone, "cbmVin", null);
         saveToSession(phone, "cbmGender", null);
     }
-    private String getCbmFieldDisplayName(String field) {
-        switch (field) {
-            case "firstName": return "First Name";
-            case "lastName": return "Last Name";
-            case "email": return "Email Address";
-            case "vin": return "Voters Card VIN";
-            case "gender": return "Gender";
-            default: return "the required information";
-        }
-    }
+    // private String getCbmFieldDisplayName(String field) {
+    //     switch (field) {
+    //         case "firstName": return "First Name";
+    //         case "lastName": return "Last Name";
+    //         case "email": return "Email Address";
+    //         case "vin": return "Voters Card VIN";
+    //         case "gender": return "Gender";
+    //         default: return "the required information";
+    //     }
+    // }
     private String handleCBMFlow(String phone, String input) {
         String cbmFlow = (String) retrieveFromSession(phone, "cbmFlow");
 
@@ -651,8 +560,8 @@ public class ussdcontroller {
         switch (cbmFlow) {
             case "main_menu":
                 return handleCBMMainMenu(phone, input);
-            case "join_movement":
-                return handleCBMJoinMovement(phone, input);
+            // case "join_movement":
+            //     return handleCBMJoinMovement(phone, input);
             case "about":
                 return handleCBMAbout(phone, input);
             case "about_cbm":
@@ -929,9 +838,9 @@ public class ussdcontroller {
     private String handleCBMMainMenu(String phone, String choice) {
         switch (choice) {
             case "1":
-                saveToSession(phone, "cbmFlow", "join_movement");
-                saveToSession(phone, "cbmField", "firstName");
-                return "CON JOIN CITY BOY MOVEMENT\n\nEnter First Name:";
+                String ussdSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
+                saveToSession(phone, "cbmUssdRelayActive", "true");
+                return cbmUssdRelayClient.relay(ussdSessionId, phone, "");    
                 
             case "2":
                 saveToSession(phone, "cbmFlow", "about");
@@ -970,14 +879,8 @@ public class ussdcontroller {
             case "7":
                 return "END NEWS AND UPDATE\n\nCheck back later for updates.\n\nwww.cbm.com";
             
-            case "8":
-                saveToSession(phone, "cbmFlow", "check_membership");
-                return "CON CHECK MEMBERSHIP\n\nEnter your CBM Member ID\n(e.g. CBM-2026-NG-04217):";
             
-            case "9":
-                String ussdSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
-                saveToSession(phone, "cbmUssdRelayActive", "true");
-                return cbmUssdRelayClient.relay(ussdSessionId, phone, "");              
+                        
             case "0":
                 saveToSession(phone, "cbmFlow", null);
                 resetUserSession(phone);
