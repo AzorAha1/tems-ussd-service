@@ -1574,6 +1574,12 @@ public class ussdcontroller {
             String relayResponse = cbmUssdRelayClient.relay(ussdSessionId, normalizedPhoneNumber, inputedText);
             if (relayResponse.startsWith("END")) {
                 saveToSession(normalizedPhoneNumber, "cbmUssdRelayActive", null);
+                try {
+                    smsService.sendCbmRegistrationSms(ussdSessionId, normalizedPhoneNumber, relayResponse);
+                } catch (Exception smsErr) {
+                    System.err.println("⚠️ CBM completion SMS failed (non-fatal): " + smsErr.getMessage());
+                }
+                saveToSession(normalizedPhoneNumber, "cbmUssdRelayActive", null);
             }
             return relayResponse;
         }

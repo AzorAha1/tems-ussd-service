@@ -78,4 +78,17 @@ public class Smsservice {
 
             client.sendSms(req);
         }
+    public void sendCbmRegistrationSms(String sessionId, String phone, String finalMessage) {
+       String cleanMessage = finalMessage.replaceFirst("^END\\s*", "");
+       String message = "TEMS: " + cleanMessage;
+
+        SmsSendRequest req = new SmsSendRequest(
+            phone,
+            message,
+            sessionId,
+            "CBM-" + sessionId,
+            "CBM_RELAY"
+        );
+        client.sendSms(req);
+    }
 }
