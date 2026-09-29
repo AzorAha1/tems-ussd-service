@@ -270,18 +270,23 @@ public class ussdcontroller {
             "0. Exit";
     }
 
-    // Sub-code that sends ANY caller straight to the CBM menu: *7447*27#
+    // Sub-codes that send ANY caller straight to the CBM menu:
+    //   *7447*27#  and  *7447*1#   (whichever one HML/MTN has provisioned will work)
     // (no CBM_SPECIAL_NUMBERS check needed for this route)
-    private static final String CBM_SUBCODE = "27";
+    private static final Set<String> CBM_SUBCODES = Set.of("27", "1");
+    // Only this code is also accepted when typed on its own ("27" / "*27#"), because a bare "1"
+    // is a normal menu choice and must never be treated as a dial code.
+    private static final String CBM_BARE_SUBCODE = "27";
 
     /**
-     * True when the dialed string is the CBM substring.
+     * True when the dialed string is a CBM substring.
      * Matches:
-     *   *7447*27#  /  7447*27  /  744727   -> always
-     *   7447*1*27                          -> always (in case the gateway appends MTN's "1 continue")
-     *   *27#  /  27                        -> ONLY when the phone has no active USSD session,
-     *                                         so a user typing "27" as an answer mid-flow
-     *                                         (e.g. "spread of structure") is never hijacked.
+     *   *7447*27#  /  7447*27  /  744727      -> always
+     *   *7447*1#   /  7447*1                  -> always
+     *   7447*1*27  /  7447*1*1                -> always (in case the gateway appends MTN's "1 continue")
+     *   *27#  /  27                           -> ONLY when the phone has no active USSD session,
+     *                                            so a user typing "27" as an answer mid-flow
+     *                                            (e.g. "spread of structure") is never hijacked.
      */
     private boolean isCbmSubstringEntry(String input, String phone, String sessionId) {
         if (!CBM_ENABLED || input == null) {
@@ -299,21 +304,21 @@ public class ussdcontroller {
             return false;
         }
 
-        // no asterisks form: 744727
-        if (("7447" + CBM_SUBCODE).equals(normalized)) {
-            return true;
-        }
-
-        // dial-string form: starts with 7447 and ends with 27
+        // dial-string form: starts with 7447 and ends with a CBM sub-code (7447*27, 7447*1, 7447*1*27)
         if (normalized.contains("*")) {
             String[] parts = normalized.split("\\*");
             return parts.length >= 2
                 && "7447".equals(parts[0])
-                && CBM_SUBCODE.equals(parts[parts.length - 1]);
+                && CBM_SUBCODES.contains(parts[parts.length - 1]);
+        }
+
+        // no asterisks form: 744727 (kept only for 27; "74471" is too easy to hit by accident)
+        if (("7447" + CBM_BARE_SUBCODE).equals(normalized)) {
+            return true;
         }
 
         // bare "27" / "*27#": only a fresh dial, never a mid-session answer
-        if (CBM_SUBCODE.equals(normalized)) {
+        if (CBM_BARE_SUBCODE.equals(normalized)) {
             return !isActiveUssdFollowUp(phone, sessionId);
         }
 
@@ -1633,7 +1638,7 @@ public class ussdcontroller {
         if (isCbmSubstringEntry(dialedCode, normalizedPhoneNumber, sessionId)
             || (!isActiveUssdFollowUp(normalizedPhoneNumber, sessionId)
                 && isCbmSubstringEntry(serviceCode, normalizedPhoneNumber, sessionId))) {
-            System.out.println("Routing to CBM substring flow (*7447*" + CBM_SUBCODE + "#)");
+            System.out.println("Routing to CBM substring flow (dialed: " + dialedCode + ")");
             resetUserSession(normalizedPhoneNumber);
             if (sessionId != null) {
                 // needed: CBM option 1 (Join The Movement) relays using this id
