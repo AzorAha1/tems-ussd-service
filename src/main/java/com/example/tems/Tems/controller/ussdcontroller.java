@@ -165,7 +165,7 @@ public class ussdcontroller {
         "07065371844",
         "07062807200",
         "07065551742",
-        "07072603735",
+        // "07072603735",
         "08162251186"
     );
     @PostMapping("/add-nabteb")
@@ -306,7 +306,20 @@ public class ussdcontroller {
         @RequestBody(required = false) String rawBody,
         HttpServletRequest request
     ) {
+        // TEMPORARY DIAGNOSTIC — remove once sub-code shape is confirmed
+        System.out.println("=== DIAGNOSTIC: FULL REQUEST CAPTURE ===");
+        System.out.println("Full URI: " + request.getRequestURI());
+        System.out.println("Query string: " + request.getQueryString());
+        System.out.println("Method: " + request.getMethod());
         Map<String, Object> body = parseRequestBody(rawBody);
+        java.util.Enumeration<String> headerNames = request.getHeaderNames();
+        while (headerNames.hasMoreElements()) {
+            String name = headerNames.nextElement();
+            System.out.println("Header [" + name + "]: " + request.getHeader(name));
+        }
+
+        System.out.println("Parsed body map: " + body);
+        System.out.println("=== END DIAGNOSTIC ===");
         boolean plainResponse = shouldReturnPlainUssd(request, acceptHeader, contentTypeHeader);
 
         if (sessionId == null && sessionIdParam != null) {
