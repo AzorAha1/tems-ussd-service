@@ -502,6 +502,7 @@ public class ussdcontroller {
             return true;
         }
         
+        
         // Also check for empty input
         if (normalizedInput.isEmpty()) {
             System.out.println("✅ Empty input - this is initial request");
@@ -1580,6 +1581,11 @@ public class ussdcontroller {
             if (sessionId != null) {
                 saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
             }
+            if ("7447*1".equals(inputedText.trim())) {
+                saveToSession(normalizedPhoneNumber, "cbmFlow", "main_menu");
+                return showCBMMenu();
+            }
+
             return HandleLevel1(normalizedPhoneNumber, new String[0], true);
         }
         if ("true".equals(retrieveFromSession(normalizedPhoneNumber, "cbmUssdRelayActive"))) {
