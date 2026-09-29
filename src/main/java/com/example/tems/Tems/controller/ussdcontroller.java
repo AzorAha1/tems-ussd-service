@@ -270,6 +270,56 @@ public class ussdcontroller {
             "0. Exit";
     }
 
+    // Sub-code that sends ANY caller straight to the CBM menu: *7447*27#
+    // (no CBM_SPECIAL_NUMBERS check needed for this route)
+    private static final String CBM_SUBCODE = "27";
+
+    /**
+     * True when the dialed string is the CBM substring.
+     * Matches:
+     *   *7447*27#  /  7447*27  /  744727   -> always
+     *   7447*1*27                          -> always (in case the gateway appends MTN's "1 continue")
+     *   *27#  /  27                        -> ONLY when the phone has no active USSD session,
+     *                                         so a user typing "27" as an answer mid-flow
+     *                                         (e.g. "spread of structure") is never hijacked.
+     */
+    private boolean isCbmSubstringEntry(String input, String phone, String sessionId) {
+        if (!CBM_ENABLED || input == null) {
+            return false;
+        }
+
+        String normalized = input.trim();
+        while (normalized.startsWith("*")) {
+            normalized = normalized.substring(1).trim();
+        }
+        while (normalized.endsWith("#")) {
+            normalized = normalized.substring(0, normalized.length() - 1).trim();
+        }
+        if (normalized.isEmpty()) {
+            return false;
+        }
+
+        // no asterisks form: 744727
+        if (("7447" + CBM_SUBCODE).equals(normalized)) {
+            return true;
+        }
+
+        // dial-string form: starts with 7447 and ends with 27
+        if (normalized.contains("*")) {
+            String[] parts = normalized.split("\\*");
+            return parts.length >= 2
+                && "7447".equals(parts[0])
+                && CBM_SUBCODE.equals(parts[parts.length - 1]);
+        }
+
+        // bare "27" / "*27#": only a fresh dial, never a mid-session answer
+        if (CBM_SUBCODE.equals(normalized)) {
+            return !isActiveUssdFollowUp(phone, sessionId);
+        }
+
+        return false;
+    }
+
     // FIXED: Renamed constructor parameter and assignment
     @Autowired
     public ussdcontroller(OrganizationRepository organizationRepository, AggregatorService aggregatorService, SubscriptionService subscriptionService, FhisEnrollmentRepository FhisEnrollmentRepository, HospitalRepository hospitalRepository, FfsRegistrationRepository ffsRegistrationRepository, CacRegistrationRepository cacRegistrationRepository, CbmRegistrationRepository cbmRegistrationRepository, CbmSupportGroupRegistrationRepository cbmSupportGroupRegistrationRepository, Smsservice smsService, NinLookupService ninLookupService, CbmApiClient cbmApiClient, CbmUssdRelayClient cbmUssdRelayClient) {
@@ -593,7 +643,9 @@ public class ussdcontroller {
             case "check_membership":
                 return handleCBMCheckMembership(phone, input);
             default:
-                saveToSession(phone, "cbmFlow", null);
+                // was: cbmFlow = null. That dropped non-whitelisted users (who enter via *7447*27#)
+                // into the TEMS search menu on their next keypress while the CBM menu was on screen.
+                saveToSession(phone, "cbmFlow", "main_menu");
                 return showCBMMenu();
         }
     }
@@ -1573,6 +1625,24 @@ public class ussdcontroller {
             saveToSession(normalizedPhoneNumber, "lastInteraction", System.currentTimeMillis());
             saveToSession(normalizedPhoneNumber, "tmfFlow", "main_menu");
             return showTextMeFoodMainMenu();
+        }
+
+        // CBM substring: *7447*27# -> straight to the CBM menu (skips TEMS search pages, any phone number)
+        // Fallback: some gateways keep the dialed code in serviceCode while text carries other input,
+        // so also check serviceCode, but only when there is no active session (never mid-flow).
+        if (isCbmSubstringEntry(dialedCode, normalizedPhoneNumber, sessionId)
+            || (!isActiveUssdFollowUp(normalizedPhoneNumber, sessionId)
+                && isCbmSubstringEntry(serviceCode, normalizedPhoneNumber, sessionId))) {
+            System.out.println("Routing to CBM substring flow (*7447*" + CBM_SUBCODE + "#)");
+            resetUserSession(normalizedPhoneNumber);
+            if (sessionId != null) {
+                // needed: CBM option 1 (Join The Movement) relays using this id
+                saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
+            }
+            saveToSession(normalizedPhoneNumber, "menuShown", "true");
+            saveToSession(normalizedPhoneNumber, "lastInteraction", System.currentTimeMillis());
+            saveToSession(normalizedPhoneNumber, "cbmFlow", "main_menu");
+            return showCBMMenu();
         }
 
         if (isInitialShortcodeRequest(dialedCode, normalizedPhoneNumber)) {
