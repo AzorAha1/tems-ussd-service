@@ -14,6 +14,8 @@ import java.util.Map;
 @Component
 public class CbmUssdRelayClient {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(CbmUssdRelayClient.class);
+
     private final RestTemplate restTemplate;
     private final CbmApiConfig config;
     private final CbmTokenManager tokenManager;
@@ -43,20 +45,19 @@ public class CbmUssdRelayClient {
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
-            System.out.println("🔍 CBM relay - calling: " + url + " | body: " + body);
+
             ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
 
             Map<String, Object> responseBody = response.getBody();
-            System.out.println("🔍 CBM relay - raw response: " + responseBody);
+
 
             return extractMessage(responseBody);
 
         } catch (HttpClientErrorException e) {
-            System.err.println("⚠️ CBM relay failed - Status: " + e.getStatusCode()
-                + " | Body: " + e.getResponseBodyAsString());
+            LOG.warn("cbm_relay_failure status={}", e.getStatusCode().value());
             return "END CBM registration is temporarily unavailable. Please try again shortly.";
         } catch (Exception e) {
-            System.err.println("⚠️ CBM relay failed - " + e.getMessage());
+            LOG.warn("cbm_relay_failure type={}", e.getClass().getSimpleName());
             return "END CBM registration is temporarily unavailable. Please try again shortly.";
         }
     }
@@ -66,13 +67,13 @@ public class CbmUssdRelayClient {
     @SuppressWarnings("unchecked")
     private String extractMessage(Map<String, Object> body) {
         if (body == null || !Boolean.TRUE.equals(body.get("success"))) {
-            System.err.println("⚠️ CBM relay - unsuccessful or empty response: " + body);
+
             return "END CBM registration is temporarily unavailable. Please try again shortly.";
         }
 
         Map<String, Object> data = (Map<String, Object>) body.get("data");
         if (data == null) {
-            System.err.println("⚠️ CBM relay - missing data field: " + body);
+
             return "END CBM registration is temporarily unavailable. Please try again shortly.";
         }
 
@@ -80,7 +81,7 @@ public class CbmUssdRelayClient {
         String message = (String) data.get("message");
 
         if (action == null || message == null) {
-            System.err.println("⚠️ CBM relay - missing action/message: " + data);
+
             return "END CBM registration is temporarily unavailable. Please try again shortly.";
         }
 

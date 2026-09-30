@@ -2,8 +2,6 @@ package com.example.tems.Tems.controller;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -29,11 +27,17 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.tems.Tems.ussd.UssdInboundRequest;
+import com.example.tems.Tems.ussd.UssdRequestNormalizer;
+import com.example.tems.Tems.ussd.UssdRouteResolver;
+import com.example.tems.Tems.ussd.UssdGatewayProperties;
+import com.example.tems.Tems.ussd.UssdInboundRequest.SessionEvent;
+import com.example.tems.Tems.ussd.UssdRouteResolver.Route;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.example.tems.Tems.client.CbmApiClient;
 import com.example.tems.Tems.client.CbmUssdRelayClient;
 import com.example.tems.Tems.client.SmsSendRequest;
@@ -77,7 +81,13 @@ public class ussdcontroller {
     private final NinLookupService ninLookupService;
     private final CbmApiClient cbmApiClient;
     private final CbmUssdRelayClient cbmUssdRelayClient;
-    private static final ObjectMapper REQUEST_BODY_MAPPER = new ObjectMapper();
+    private static final Logger USSD_LOG = LoggerFactory.getLogger(ussdcontroller.class);
+    @Autowired
+    private UssdRequestNormalizer requestNormalizer = new UssdRequestNormalizer();
+    @Autowired
+    private UssdRouteResolver routeResolver = new UssdRouteResolver();
+    @Autowired
+    private UssdGatewayProperties gateway = new UssdGatewayProperties();
 
    
 
@@ -232,7 +242,7 @@ public class ussdcontroller {
             "cacRegFlow", "cacRegType", "cacRegField",
             "cacRegName", "cacRegBusinessName", "cacRegRcNumber",
             "cacRegEmail", "cacRegState", "cacRegOccupation",
-            "cacRegNin", "cacRegDob", "cacRegGender", "cacRegLga", "cacRegAddress","ussdSessionId",
+            "cacRegNin", "cacRegDob", "cacRegGender", "cacRegLga", "cacRegAddress","ussdSessionId", "ussdRoute",
             "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
             "tmfFlow", "tmfField", "tmfPhone", "tmfVerified",
             "tmfStatePage", "tmfSelectedState", "tmfLgaPage", "tmfSelectedLga",
@@ -254,7 +264,7 @@ public class ussdcontroller {
         if (!CBM_ENABLED) return false;  // <-- ADD THIS LINE
         
         boolean match = phoneNumber != null && CBM_SPECIAL_NUMBERS.contains(phoneNumber);
-        System.out.println("🔍 CBM check - incoming: '" + phoneNumber + "', set: " + CBM_SPECIAL_NUMBERS + ", match: " + match);
+
         return match;
     }
     // show cbm menu
@@ -268,61 +278,6 @@ public class ussdcontroller {
             "6. Contacts\n" +
             "7. Updates\n" +
             "0. Exit";
-    }
-
-    // Sub-codes that send ANY caller straight to the CBM menu:
-    //   *7447*27#  and  *7447*1#   (whichever one HML/MTN has provisioned will work)
-    // (no CBM_SPECIAL_NUMBERS check needed for this route)
-    private static final Set<String> CBM_SUBCODES = Set.of("27", "1");
-    // Only this code is also accepted when typed on its own ("27" / "*27#"), because a bare "1"
-    // is a normal menu choice and must never be treated as a dial code.
-    private static final String CBM_BARE_SUBCODE = "27";
-
-    /**
-     * True when the dialed string is a CBM substring.
-     * Matches:
-     *   *7447*27#  /  7447*27  /  744727      -> always
-     *   *7447*1#   /  7447*1                  -> always
-     *   7447*1*27  /  7447*1*1                -> always (in case the gateway appends MTN's "1 continue")
-     *   *27#  /  27                           -> ONLY when the phone has no active USSD session,
-     *                                            so a user typing "27" as an answer mid-flow
-     *                                            (e.g. "spread of structure") is never hijacked.
-     */
-    private boolean isCbmSubstringEntry(String input, String phone, String sessionId) {
-        if (!CBM_ENABLED || input == null) {
-            return false;
-        }
-
-        String normalized = input.trim();
-        while (normalized.startsWith("*")) {
-            normalized = normalized.substring(1).trim();
-        }
-        while (normalized.endsWith("#")) {
-            normalized = normalized.substring(0, normalized.length() - 1).trim();
-        }
-        if (normalized.isEmpty()) {
-            return false;
-        }
-
-        // dial-string form: starts with 7447 and ends with a CBM sub-code (7447*27, 7447*1, 7447*1*27)
-        if (normalized.contains("*")) {
-            String[] parts = normalized.split("\\*");
-            return parts.length >= 2
-                && "7447".equals(parts[0])
-                && CBM_SUBCODES.contains(parts[parts.length - 1]);
-        }
-
-        // no asterisks form: 744727 (kept only for 27; "74471" is too easy to hit by accident)
-        if (("7447" + CBM_BARE_SUBCODE).equals(normalized)) {
-            return true;
-        }
-
-        // bare "27" / "*27#": only a fresh dial, never a mid-session answer
-        if (CBM_BARE_SUBCODE.equals(normalized)) {
-            return !isActiveUssdFollowUp(phone, sessionId);
-        }
-
-        return false;
     }
 
     // FIXED: Renamed constructor parameter and assignment
@@ -349,95 +304,83 @@ public class ussdcontroller {
         produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_PLAIN_VALUE}
     )
     public ResponseEntity<?> handleUssdRequest(
-        @RequestParam(name = "text", required = false) String text,
-        @RequestParam(name = "input", required = false) String input,
-        @RequestParam(name = "serviceCode", required = false) String serviceCode,
-        @RequestParam(name = "phoneNumber", required = false) String phoneNumber,
-        @RequestParam(name = "phone", required = false) String phone,
-        @RequestParam(name = "session_id", required = false) String sessionId,
-        @RequestParam(name = "sessionId", required = false) String sessionIdParam,
-        @RequestHeader(name = "Accept", required = false) String acceptHeader,
-        @RequestHeader(name = "Content-Type", required = false) String contentTypeHeader,
-        @RequestBody(required = false) String rawBody,
-        HttpServletRequest request
+        @RequestBody(required = false) String rawBody, HttpServletRequest request
     ) {
-        // TEMPORARY DIAGNOSTIC — remove once sub-code shape is confirmed
-        System.out.println("=== DIAGNOSTIC: FULL REQUEST CAPTURE ===");
-        System.out.println("Full URI: " + request.getRequestURI());
-        System.out.println("Query string: " + request.getQueryString());
-        System.out.println("Method: " + request.getMethod());
-        Map<String, Object> body = parseRequestBody(rawBody);
-        java.util.Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String name = headerNames.nextElement();
-            System.out.println("Header [" + name + "]: " + request.getHeader(name));
-        }
-
-        System.out.println("Parsed body map: " + body);
-        System.out.println("=== END DIAGNOSTIC ===");
-        boolean plainResponse = shouldReturnPlainUssd(request, acceptHeader, contentTypeHeader);
-
-        if (sessionId == null && sessionIdParam != null) {
-            sessionId = sessionIdParam;
-        }
-        if (body != null && sessionId == null && body.containsKey("session_id")) {
-            sessionId = body.get("session_id").toString();
-        }
-        if (body != null && sessionId == null && body.containsKey("sessionId")) {
-            sessionId = body.get("sessionId").toString();
-        }
-        System.out.println("=== USSD REQUEST START ===");
-        System.out.println("Params - text: '" + text + "', input: '" + input + "', serviceCode: '" + serviceCode + "', phone: '" + phone + "', phoneNumber: '" + phoneNumber + "'");
-        
+        long started = System.nanoTime();
+        String correlation = java.util.UUID.randomUUID().toString();
+        boolean plain = gateway.plain(request.getHeader("Accept"));
+        String outcome = "error";
         try {
-            // Extract parameters from body if not in query params
-            if (body != null) {
-                System.out.println("Body: " + body);
-                if (phoneNumber == null) {
-                    phoneNumber = getBodyValue(body, "phoneNumber", "msisdn", "mobile", "caller", "subscriber");
-                }
-                if (phone == null) {
-                    phone = getBodyValue(body, "phone");
-                }
-                if (input == null) {
-                    input = getBodyValue(body, "input", "ussdString", "ussd_string", "message");
-                }
-                if (text == null) {
-                    text = getBodyValue(body, "text");
-                }
-                if (serviceCode == null) {
-                    serviceCode = getBodyValue(body, "serviceCode", "service_code", "shortCode", "shortcode");
-                }
-            }
-            
-            String phoneFinal = phoneNumber != null ? phoneNumber : (phone != null ? phone : "");
-            String inputFinal = input != null ? input : (text != null ? text : "");
-            
-            System.out.println("Final - phone: '" + phoneFinal + "', input: '" + inputFinal + "'");
-            
-            if (phoneFinal.isEmpty()) {
-                System.err.println("❌ Missing phone number");
-                return formatUssdResponse("END Invalid request: missing phone number.", plainResponse);
-            }
-            
-            // Process and get string response
-            String response = processUssdRequest(inputFinal, serviceCode, phoneFinal, sessionId);
-            System.out.println("Response: " + response);
-            
-            System.out.println("=== USSD REQUEST END ===");
-            return formatUssdResponse(response, plainResponse);
-            
-        } catch (Exception e) {
-            System.err.println("❌❌❌ FATAL ERROR in USSD request ❌❌❌");
-            System.err.println("Error type: " + e.getClass().getName());
-            System.err.println("Error message: " + e.getMessage());
-            System.err.println("Stack trace:");
-            e.printStackTrace();
-            System.out.println("=== USSD REQUEST END (WITH ERROR) ===");
-            
-            return formatUssdResponse("END Service temporarily unavailable. Please try again.", plainResponse);
+            UssdInboundRequest inbound = requestNormalizer.normalize(request.getParameterMap(), rawBody,
+                request.getContentType(), gateway.getMessageTypes());
+            USSD_LOG.info("ussd_ingress correlation={} method={} encoding={} phonePresent={} sessionPresent={} servicePresent={} inputPresent={} textPresent={} event={}",
+                correlation, request.getMethod().equals("GET") ? "GET" : "POST",
+                request.getContentType() != null && request.getContentType().contains("json") ? "json" : "parameters",
+                !inbound.phoneNumber().isEmpty(), !inbound.sessionId().isEmpty(), !inbound.serviceCode().isEmpty(),
+                !inbound.userInput().isEmpty(), !inbound.cumulativeText().isEmpty(), inbound.event());
+            String response = dispatchUssd(inbound, correlation);
+            outcome = response.startsWith("CON ") ? "continue" : "end";
+            return formatUssdResponse(response, plain);
+        } catch (IllegalArgumentException ex) {
+            outcome = "invalid_request";
+            return formatUssdResponse("END Invalid USSD request.", plain);
+        } catch (Exception ex) {
+            USSD_LOG.error("ussd_failure correlation={} type={}", correlation, ex.getClass().getSimpleName());
+            return formatUssdResponse("END Service temporarily unavailable. Please try again.", plain);
+        } finally {
+            USSD_LOG.info("ussd_response correlation={} format={} status=200 outcome={} durationMs={}",
+                correlation, plain ? "plain" : "json", outcome, (System.nanoTime() - started) / 1_000_000);
         }
     }
+
+    private String dispatchUssd(UssdInboundRequest inbound, String correlation) {
+        String phone = normalizePhoneNumber(inbound.phoneNumber());
+        if (phone.isEmpty()) return "END Invalid request: missing phone number.";
+        String sessionId = inbound.sessionId();
+        String storedId = (String) retrieveFromSession(phone, "ussdSessionId");
+        String storedRoute = (String) retrieveFromSession(phone, "ussdRoute");
+        boolean hasState = storedRoute != null || "true".equalsIgnoreCase(String.valueOf(retrieveFromSession(phone, "menuShown")));
+        boolean changedId = !sessionId.isEmpty() && !sessionId.equals(storedId);
+        boolean fresh = inbound.event() == SessionEvent.BEGIN || changedId || !hasState;
+        if (inbound.event() == SessionEvent.END) {
+            if (sessionId.isEmpty() || storedId == null || sessionId.equals(storedId)) resetUserSession(phone);
+            return "END Session closed.";
+        }
+        if (fresh) {
+            // An explicit continuation without local state must not be reinterpreted as a route.
+            // A delayed callback for a different session must not erase the current session.
+            if (inbound.event() == SessionEvent.CONTINUE) return "END Session expired. Please dial again.";
+            resetUserSession(phone);
+            Route route = routeResolver.resolve(inbound, gateway.cumulative(),
+                inbound.event() == SessionEvent.BEGIN || changedId);
+            boolean allowed = route != Route.TMF || isTextMeFoodAllowedPhone(phone);
+            USSD_LOG.info("ussd_route correlation={} event={} route={} access={} fresh=true", correlation,
+                inbound.event(), route, allowed ? "allowed" : "denied");
+            if (route == Route.UNKNOWN) return "END Unknown USSD route. Please dial *7447#.";
+            saveToSession(phone, "ussdSessionId", sessionId.isEmpty() ? null : sessionId);
+            saveToSession(phone, "ussdRoute", allowed ? route.name() : Route.TEMS.name());
+            saveToSession(phone, "menuShown", "true");
+            saveToSession(phone, "lastInteraction", System.currentTimeMillis());
+            if (!allowed) return HandleLevel1(phone, new String[0], true);
+            if (route == Route.TMF) {
+                saveToSession(phone, "tmfFlow", "main_menu");
+                return showTextMeFoodMainMenu();
+            }
+            if (route == Route.CBM && CBM_ENABLED) {
+                saveToSession(phone, "cbmFlow", "main_menu");
+                return showCBMMenu();
+            }
+            return HandleLevel1(phone, new String[0], true);
+        }
+        USSD_LOG.info("ussd_route correlation={} event={} route={} access={} fresh=false", correlation,
+            inbound.event(), storedRoute == null ? "LEGACY" : storedRoute,
+            "TMF".equals(storedRoute) && !isTextMeFoodAllowedPhone(phone) ? "denied" : "allowed");
+        String reply = routeResolver.reply(inbound, gateway.cumulative());
+        String response = processUssdDialogue(reply, phone, sessionId.isEmpty() ? null : sessionId, storedRoute);
+        if (response.startsWith("END ")) resetUserSession(phone);
+        return response;
+    }
+
     @PostMapping("/test-redis")
     public Map<String, Object> testRedis(@RequestParam String phone) {
         Map<String, Object> result = new HashMap<>();
@@ -491,114 +434,9 @@ public class ussdcontroller {
                 .contentType(MediaType.TEXT_PLAIN)
                 .body(response);
         }
-        return ResponseEntity.ok(convertToJsonResponse(response));
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(convertToJsonResponse(response));
     }
 
-    private boolean shouldReturnPlainUssd(HttpServletRequest request, String acceptHeader, String contentTypeHeader) {
-        return acceptHeader != null && acceptHeader.toLowerCase().contains(MediaType.TEXT_PLAIN_VALUE);
-    }
-
-    private Map<String, Object> parseRequestBody(String rawBody) {
-        Map<String, Object> parsed = new HashMap<>();
-        if (rawBody == null || rawBody.trim().isEmpty()) {
-            return parsed;
-        }
-
-        String trimmed = rawBody.trim();
-        if (trimmed.startsWith("{")) {
-            try {
-                Map<?, ?> json = REQUEST_BODY_MAPPER.readValue(trimmed, Map.class);
-                for (Map.Entry<?, ?> entry : json.entrySet()) {
-                    if (entry.getKey() != null && entry.getValue() != null) {
-                        parsed.put(entry.getKey().toString(), entry.getValue());
-                    }
-                }
-                return parsed;
-            } catch (Exception e) {
-                System.err.println("Unable to parse USSD JSON body: " + e.getMessage());
-            }
-        }
-
-        for (String pair : trimmed.split("&")) {
-            if (pair.isEmpty() || !pair.contains("=")) {
-                continue;
-            }
-            String[] parts = pair.split("=", 2);
-            String key = URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
-            String value = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
-            parsed.put(key, value);
-        }
-        return parsed;
-    }
-
-    private String getBodyValue(Map<String, Object> body, String... keys) {
-        if (body == null) {
-            return null;
-        }
-        for (String key : keys) {
-            Object value = body.get(key);
-            if (value != null) {
-                return value.toString();
-            }
-        }
-        return null;
-    }
-
-    private boolean isInitialShortcodeRequest(String input, String phoneNumber) {
-        if (input == null) return false;
-        
-        String normalizedInput = input.replaceAll("[*#]", "").trim().toLowerCase();
-        
-        System.out.println("🔍 Checking if initial request - input: '" + input + "', normalized: '" + normalizedInput + "'");
-        
-        // Check if input is EXACTLY the shortcode "7447"
-        if (normalizedInput.equals("7447")) {
-            System.out.println("✅ Matched shortcode '7447' - this is initial request");
-            return true;
-        }
-        
-        
-        // Also check for empty input
-        if (normalizedInput.isEmpty()) {
-            System.out.println("✅ Empty input - this is initial request");
-            return true;
-        }
-        
-        // ✅ FIXED: Safe type checking for menuShown
-        Object menuShown = retrieveFromSession(phoneNumber, "menuShown");
-        boolean isMenuShown = false;
-        if (menuShown != null) {
-            if (menuShown instanceof Boolean) {
-                isMenuShown = (Boolean) menuShown;
-            } else if (menuShown instanceof String) {
-                isMenuShown = "true".equalsIgnoreCase((String) menuShown);
-            }
-        }
-        
-        if (isMenuShown) {
-            System.out.println("❌ Menu already shown - this is a follow-up request");
-            return false;
-        }
-        
-        // Single digit inputs should NOT be initial
-        if (normalizedInput.matches("^[0-9]$")) {
-            System.out.println("❌ Single digit input - not an initial request");
-            return false;
-        }
-        
-        // Check if no session exists
-        boolean hasNoSession = Arrays.stream(SessionKeys.ALL_KEYS)
-            .noneMatch(key -> Boolean.TRUE.equals(redisTemplate.hasKey(phoneNumber + ":" + key)));
-        
-        if (hasNoSession) {
-            System.out.println("✅ No session found - treating as initial request");
-            return true;
-        }
-        
-        System.out.println("❌ Not an initial request - normalized: '" + normalizedInput + "'");
-        return false;
-    }
-    
     private void clearCBMJoinSession(String phone) {
         saveToSession(phone, "cbmFlow", null);
         saveToSession(phone, "cbmField", null);
@@ -829,7 +667,7 @@ public class ussdcontroller {
 
             return "END We will review your application\nand connect you with the national\ncoordination team.\n\nRef: " + reg.getReferenceId();
         } catch (Exception e) {
-            System.err.println("Error saving CBM support group registration: " + e.getMessage());
+
             return "END Error saving registration. Please try again.";
         }
     }
@@ -989,52 +827,6 @@ public class ussdcontroller {
         "Mama Nkechi Foods", "XYZ Supermarket", "Fresh Basket Foods",
         "Enugu Food Hub", "ABC Restaurant"
     };
-
-    private boolean isTextMeFoodEntry(String input, String phone, String sessionId) {
-        if (input == null || input.trim().isEmpty()) {
-            return false;
-        }
-
-        String normalized = input.trim();
-        while (normalized.endsWith("#")) {
-            normalized = normalized.substring(0, normalized.length() - 1).trim();
-        }
-
-        if ("*10".equals(normalized) || "10".equals(normalized)) {
-            return !isActiveUssdFollowUp(phone, sessionId);
-        }
-
-        if ("*7447*10".equals(normalized) || "7447*10".equals(normalized) || "744710".equals(normalized)) {
-            return true;
-        }
-
-        if (normalized.contains("*")) {
-            String[] parts = normalized.split("\\*");
-            for (String part : parts) {
-                if ("10".equals(part)) {
-                    return true;
-                }
-            }
-        }
-
-        return normalized.startsWith("7447") && normalized.endsWith("10");
-    }
-
-    private boolean isActiveUssdFollowUp(String phone, String sessionId) {
-        Object menuShown = retrieveFromSession(phone, "menuShown");
-        boolean hasMenu = false;
-        if (menuShown instanceof Boolean) {
-            hasMenu = (Boolean) menuShown;
-        } else if (menuShown instanceof String) {
-            hasMenu = "true".equalsIgnoreCase((String) menuShown);
-        }
-        if (!hasMenu) {
-            return false;
-        }
-
-        String storedSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
-        return sessionId == null || storedSessionId == null || sessionId.equals(storedSessionId);
-    }
 
     private boolean isTextMeFoodSearchTerm(String searchTerm) {
         if (searchTerm == null) {
@@ -1606,63 +1398,9 @@ public class ussdcontroller {
         saveToSession(phone, "tmfRedeemAmount", null);
     }
 
-    private String processUssdRequest(String inputText, String serviceCode, String phoneNumber, String sessionId) {
+    private String processUssdDialogue(String inputText, String phoneNumber, String sessionId, String route) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
-        
-        if (normalizedPhoneNumber == null || normalizedPhoneNumber.isEmpty()) {
-            return "END Invalid phone number provided.";
-        }
-        
-        String inputedText = (inputText == null) ? "" : inputText.trim();
-        String dialedCode = hasText(inputedText) ? inputedText : (serviceCode == null ? "" : serviceCode.trim());
-
-        if (isTextMeFoodEntry(dialedCode, normalizedPhoneNumber, sessionId)) {
-            if (!isTextMeFoodAllowedPhone(normalizedPhoneNumber)) {
-                System.out.println("Text Me Food substring denied for non-test phone");
-                return routeTextMeFoodDeniedToMainMenu(normalizedPhoneNumber, sessionId);
-            }
-            System.out.println("Routing to Text Me Food Foundation substring flow");
-            resetUserSession(normalizedPhoneNumber);
-            if (sessionId != null) {
-                saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
-            }
-            saveToSession(normalizedPhoneNumber, "menuShown", "true");
-            saveToSession(normalizedPhoneNumber, "lastInteraction", System.currentTimeMillis());
-            saveToSession(normalizedPhoneNumber, "tmfFlow", "main_menu");
-            return showTextMeFoodMainMenu();
-        }
-
-        // CBM substring: *7447*27# -> straight to the CBM menu (skips TEMS search pages, any phone number)
-        // Fallback: some gateways keep the dialed code in serviceCode while text carries other input,
-        // so also check serviceCode, but only when there is no active session (never mid-flow).
-        if (isCbmSubstringEntry(dialedCode, normalizedPhoneNumber, sessionId)
-            || (!isActiveUssdFollowUp(normalizedPhoneNumber, sessionId)
-                && isCbmSubstringEntry(serviceCode, normalizedPhoneNumber, sessionId))) {
-            System.out.println("Routing to CBM substring flow (dialed: " + dialedCode + ")");
-            resetUserSession(normalizedPhoneNumber);
-            if (sessionId != null) {
-                // needed: CBM option 1 (Join The Movement) relays using this id
-                saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
-            }
-            saveToSession(normalizedPhoneNumber, "menuShown", "true");
-            saveToSession(normalizedPhoneNumber, "lastInteraction", System.currentTimeMillis());
-            saveToSession(normalizedPhoneNumber, "cbmFlow", "main_menu");
-            return showCBMMenu();
-        }
-
-        if (isInitialShortcodeRequest(dialedCode, normalizedPhoneNumber)) {
-            System.out.println("✅ Initial USSD request detected");
-            clearNavigationSession(normalizedPhoneNumber);
-            if (sessionId != null) {
-                saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
-            }
-            if ("7447*1".equals(inputedText.trim())) {
-                saveToSession(normalizedPhoneNumber, "cbmFlow", "main_menu");
-                return showCBMMenu();
-            }
-
-            return HandleLevel1(normalizedPhoneNumber, new String[0], true);
-        }
+        String inputedText = inputText == null ? "" : inputText.trim();
         if ("true".equals(retrieveFromSession(normalizedPhoneNumber, "cbmUssdRelayActive"))) {
             String ussdSessionId = (String) retrieveFromSession(normalizedPhoneNumber, "ussdSessionId");
             String relayResponse = cbmUssdRelayClient.relay(ussdSessionId, normalizedPhoneNumber, inputedText);
@@ -1671,38 +1409,34 @@ public class ussdcontroller {
                 try {
                     smsService.sendCbmRegistrationSms(ussdSessionId, normalizedPhoneNumber, relayResponse);
                 } catch (Exception smsErr) {
-                    System.err.println("⚠️ CBM completion SMS failed (non-fatal): " + smsErr.getMessage());
+
                 }
                 saveToSession(normalizedPhoneNumber, "cbmUssdRelayActive", null);
             }
             return relayResponse;
         }
         
+        // Established destination is authoritative; dialogue is never re-resolved as a dial.
+        if ("TMF".equals(route)) {
+            if (!isTextMeFoodAllowedPhone(normalizedPhoneNumber)) {
+                return routeTextMeFoodDeniedToMainMenu(normalizedPhoneNumber, sessionId);
+            }
+            extendUserSession(normalizedPhoneNumber);
+            return handleTextMeFoodFlow(normalizedPhoneNumber, inputedText);
+        }
+        if ("CBM".equals(route) && CBM_ENABLED) {
+            extendUserSession(normalizedPhoneNumber);
+            return handleCBMFlow(normalizedPhoneNumber, inputedText);
+        }
+
         // only remove # at teh very end of input
         if (inputedText.endsWith("#")) {
             inputedText = inputedText.substring(0, inputedText.length() - 1);
         }
 
-        if (isTextMeFoodEntry(inputedText, normalizedPhoneNumber, sessionId)
-            || (!hasText(inputedText) && isTextMeFoodEntry(serviceCode, normalizedPhoneNumber, sessionId))) {
-            if (!isTextMeFoodAllowedPhone(normalizedPhoneNumber)) {
-                System.out.println("Text Me Food substring denied for non-test phone");
-                return routeTextMeFoodDeniedToMainMenu(normalizedPhoneNumber, sessionId);
-            }
-            System.out.println("Routing to Text Me Food Foundation substring flow");
-            resetUserSession(normalizedPhoneNumber);
-            if (sessionId != null) {
-                saveToSession(normalizedPhoneNumber, "ussdSessionId", sessionId);
-            }
-            saveToSession(normalizedPhoneNumber, "menuShown", "true");
-            saveToSession(normalizedPhoneNumber, "lastInteraction", System.currentTimeMillis());
-            saveToSession(normalizedPhoneNumber, "tmfFlow", "main_menu");
-            return showTextMeFoodMainMenu();
-        }
-
         // detect if input is phone number
         if (inputedText.equals(normalizedPhoneNumber) || inputedText.equals(phoneNumber)) {
-            System.out.println("⚠️ Detected phone number as input - ignoring");
+
             String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
             if (currentFlow != null) {
                 return "CON Processing your request...";
@@ -1711,15 +1445,9 @@ public class ussdcontroller {
             }
         }
         
-        System.out.println("📞 Processing USSD - Phone: " + normalizedPhoneNumber + ", Input: '" + inputedText + "'");
+
 
         extendUserSession(normalizedPhoneNumber);
-
-        // if (isInitialShortcodeRequest(inputedText, normalizedPhoneNumber)) {
-        //     System.out.println("✅ Initial USSD request detected");
-        //     clearNavigationSession(normalizedPhoneNumber);
-        //     return HandleLevel1(normalizedPhoneNumber, new String[0], true);
-        // }
 
         String requestId = normalizedPhoneNumber + ":" + inputedText + ":" + System.nanoTime();
         if (isDuplicateRequest(requestId, inputedText)) {
@@ -1730,40 +1458,40 @@ public class ussdcontroller {
         
         // Check FHIS enrollment flow first
         String currentFlow = (String) retrieveFromSession(normalizedPhoneNumber, "currentFlow");
-        System.out.println("Current Flow: " + currentFlow + ", Input: " + inputedText);
+
         if ("fhis_enrollment".equals(currentFlow)) {
-            System.out.println("Routing to Fhis Enrollment flow");
+
             return handleFHISEnrollmentFlow(normalizedPhoneNumber, inputedText);
         }
         // 🔥 FIX: Move FFS Registration flow check HERE, before selectedOrgId
         String ffsRegFlow = (String) retrieveFromSession(normalizedPhoneNumber, "ffsRegFlow");
         if (ffsRegFlow != null) {
-            System.out.println("Routing to FFS Registration flow: " + ffsRegFlow);
+
             return handleRegistrationFlow(normalizedPhoneNumber, inputedText);
         }
         // move CAC Registration flow check here
         String cacRegFlow = (String) retrieveFromSession(normalizedPhoneNumber, "cacRegFlow");
         if (cacRegFlow != null) {
-            System.out.println("Routing to CAC Registration flow: " + cacRegFlow);
+
             return handleCACRegistrationFlow(normalizedPhoneNumber, inputedText);
         }
         String nabtebFlow = (String) retrieveFromSession(normalizedPhoneNumber, "nabtebFlow");
         if (nabtebFlow != null) {
-            System.out.println("Routing to NABTEB flow: " + nabtebFlow);
+
             return handleNABTEBRegistrationFlow(normalizedPhoneNumber, inputedText);
         }
         String tmfFlow = (String) retrieveFromSession(normalizedPhoneNumber, "tmfFlow");
         if (tmfFlow != null) {
             if (!isTextMeFoodAllowedPhone(normalizedPhoneNumber)) {
-                System.out.println("Text Me Food flow denied for non-test phone");
+
                 return routeTextMeFoodDeniedToMainMenu(normalizedPhoneNumber, sessionId);
             }
-            System.out.println("Routing to Text Me Food flow: " + tmfFlow);
+
             return handleTextMeFoodFlow(normalizedPhoneNumber, inputedText);
         }
         // cbm movement flow check
         if (CBM_ENABLED && (isCbmSpecialNumber(normalizedPhoneNumber) || retrieveFromSession(normalizedPhoneNumber, "cbmFlow") != null)) {
-            System.out.println("Routing to CBM Movement flow");
+
             return handleCBMFlow(normalizedPhoneNumber, inputedText);
         } else if (!CBM_ENABLED && retrieveFromSession(normalizedPhoneNumber, "cbmFlow") != null) {
         // CBM is off — wipe any leftover session so user falls through to TEMS cleanly
@@ -1785,22 +1513,22 @@ public class ussdcontroller {
         }
         
         if (awaitingSearch) {
-            System.out.println("🔍 User is providing search term");
+
             return HandleLevel2(inputedText, normalizedPhoneNumber, new String[]{inputedText});
         }
         // check selectedorgid before org_ids
         Long selectedOrgId = getLongFromSession(normalizedPhoneNumber, "selectedOrgId");
         if (selectedOrgId != null) {
-            System.out.println("🏢 User is navigating organization menu");
+
             String currentSubMenu = (String) retrieveFromSession(normalizedPhoneNumber, "currentSubMenu");
             if ("more_info".equals(currentSubMenu)) {
-                System.out.println("User is in 'more_info' submenu");
+
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             }else if ("register_verify".equals(currentSubMenu) || "verify_menu".equals(currentSubMenu) || "verify_form".equals(currentSubMenu) || "request_service".equals(currentSubMenu) || "report_incident".equals(currentSubMenu) || "guidelines".equals(currentSubMenu) || "faqs".equals(currentSubMenu) || "alerts".equals(currentSubMenu) || "more_info_ffs".equals(currentSubMenu) || "account_profile".equals(currentSubMenu) || "cac_register_verify".equals(currentSubMenu) || "cac_verify_menu".equals(currentSubMenu) || "cac_verify_form".equals(currentSubMenu)) {
-                System.out.println("User is in FFS submenu");
+
                 return handleLevel4(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             } else {
-                System.out.println("User is in main org menu");
+
                 return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
             }
         }
@@ -1808,11 +1536,11 @@ public class ussdcontroller {
         // Check if we have search results (user is selecting from list)
         List<Long> orgIds = getOrgIdsFromSession(normalizedPhoneNumber);
         if (orgIds != null && !orgIds.isEmpty()) {
-            System.out.println("📋 User is selecting from organization list");
+
             return HandleLevel3(inputedText, normalizedPhoneNumber, new String[]{inputedText});
         }
         // Default: main menu selection
-        System.out.println("🏠 User is at main menu");
+
         return HandleLevel2(inputedText, normalizedPhoneNumber, new String[]{inputedText});
     }
     private static final int MAX_ORGANIZATIONS_PER_PAGE = 5;
@@ -1849,7 +1577,7 @@ public class ussdcontroller {
     }
 
     private String HandleLevel2(String text, String phone, String[] parts) {
-        System.out.println("📋 HandleLevel2 called - text: '" + text + "', phone: '" + phone + "'");
+
         
         try {
             // 🔥 NEW: Check if we're waiting for search term
@@ -1868,7 +1596,7 @@ public class ussdcontroller {
                 
                 // This is a search term, not a menu choice
                 String searchTerm = text.trim();
-                System.out.println("✅ Processing search term: '" + searchTerm + "'");
+
                 
                 if (searchTerm.isEmpty()) {
                     return "CON Please enter an organization name:";
@@ -1902,12 +1630,12 @@ public class ussdcontroller {
                 saveToSession(phone, "selectedOrgId", null);
                 saveToSession(phone, "currentSubMenu", null);
             } catch (Exception e) {
-                System.err.println("⚠️ Warning: Could not clear session data: " + e.getMessage());
+
             }
             
             // Validate input
             if (text == null || text.trim().isEmpty()) {
-                System.err.println("❌ Empty text in HandleLevel2");
+
                 return "CON Invalid input. Please select:\n\n" +
                     "1. Search Organizations\n" +
                     "2. About TEMS\n" +
@@ -1915,32 +1643,32 @@ public class ussdcontroller {
             }
             
             String choice = text.trim();
-            System.out.println("Processing choice: '" + choice + "'");
+
             
             // Handle menu choices
             switch (choice) {
                 case "1":
-                    System.out.println("✅ User selected: Search Organizations");
+
                     saveToSession(phone, "awaitingSearchTerm", true);  // 🔥 SAVE STATE
                     return "CON Enter the name or initials of the organization you want to search for:";
                     
                 case "2":
-                    System.out.println("✅ User selected: About TEMS");
+
                     return "END TEMS (Terracotta Easy Mobile Solutions)\n" +
                         "A service to help you find organization information easily.\n\n" +
                         "Dial *7447# to start.";
                     
                 case "0":
-                    System.out.println("✅ User selected: Exit");
+
                     try {
                         resetUserSession(phone);
                     } catch (Exception e) {
-                        System.err.println("⚠️ Session reset failed but continuing: " + e.getMessage());
+
                     }
                     return "END Thank you for using TEMS SERVICE!";
                     
                 default:
-                    System.out.println("❌ Invalid choice: '" + choice + "'");
+
                     return "CON Invalid choice. Please select:\n\n" +
                         "1. Search Organizations\n" +
                         "2. About TEMS\n" +
@@ -1948,8 +1676,8 @@ public class ussdcontroller {
             }
             
         } catch (Exception e) {
-            System.err.println("❌ CRITICAL ERROR in HandleLevel2: " + e.getMessage());
-            e.printStackTrace();
+
+
             return "END Error processing request. Please dial *7447# to try again.";
         }
     }
@@ -2083,13 +1811,13 @@ public class ussdcontroller {
 
     private String handleOrganizationSelection(String choice, String phone) {
         if (choice == null || choice.trim().isEmpty()) {
-            System.err.println("Empty choice received for phone: " + phone);
+
             return "END Invalid input. Please try again by dialing the USSD code.";
         }
         
         List<Long> orgids = getOrgIdsFromSession(phone);
         if (orgids == null || orgids.isEmpty()) {
-            System.err.println("No org_ids found in session for phone: " + phone);
+
             return "END Session expired. Please start over.";
         }
         
@@ -2127,11 +1855,11 @@ public class ussdcontroller {
             Long selectedID = orgids.get(selection - 1);
             saveToSession(phone, "selectedOrgId", selectedID);
             
-            System.out.println("Selected organization ID: " + selectedID + " for choice: " + selection);
+
             
             Optional<Organization> selectedOrgOptional = organizationRepository.findById(selectedID);
             if (!selectedOrgOptional.isPresent()) {
-                System.err.println("Organization not found for ID: " + selectedID);
+
                 return "END Organization not found. Please try again.";
             }
             
@@ -2139,11 +1867,11 @@ public class ussdcontroller {
             return showorgmenu(selectedOrg);
             
         } catch (NumberFormatException e) {
-            System.err.println("Invalid number format for phone: " + phone + ", choice: '" + choice + "'");
+
             return "END Please enter a valid number.";
         } catch (Exception e) {
-            System.err.println("Error in handleOrganizationSelection: " + e.getMessage());
-            e.printStackTrace();
+
+
             return "END An error occurred. Please try again.";
         }
     }
@@ -2508,7 +2236,7 @@ public class ussdcontroller {
     private String handleLevel4(String choice, String phone, String[] parts) {
         Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
         if (selectedOrgId == null) {
-            System.out.println("No selectedOrgId in handleLevel4 - clearing stale session");
+
             saveToSession(phone, "currentSubMenu", null);
             return "END No organization selected. Please start over.";
         }
@@ -2521,7 +2249,7 @@ public class ussdcontroller {
         Organization org = orgOptional.get();
     
         String currentSubMenu = (String) retrieveFromSession(phone, "currentSubMenu");
-        System.out.println("HandleLevel4 - currentSubMenu: " + currentSubMenu + ", choice: " + choice);
+
         
         // FFS Register/Verify submenu
         if ("register_verify".equals(currentSubMenu)) {
@@ -2715,17 +2443,17 @@ public class ussdcontroller {
             
             String orgName = org.getName().toUpperCase();
             if (!(orgName.contains("FHIS") || orgName.contains("FCT HEALTH") || orgName.contains("FCT HEALTH INSURANCE"))) {
-                System.out.println("Stale more_info state for non-FHIS org - redirecting");
+
                 return showorgmenu(org);
             }
             
             switch (choice) {
                 case "1":
                     if (orgName.contains("FHIS") || orgName.contains("FCT HEALTH") || orgName.contains("FCT HEALTH INSURANCE")) {
-                        System.out.println("User selected FHIS enrollment from More Info menu");
+
                         return handleFHISEnrollment(org, phone);
                     } else {
-                        System.out.println("Invalid FHIS enrollment attempt for non-FHIS org");
+
                         return "END Invalid choice for More Info menu.";
                     }
                 case "2":
@@ -2735,7 +2463,7 @@ public class ussdcontroller {
                         return "END Invalid option for this organization.";
                     }
                 case "0":
-                    System.out.println("User selected '0' to return to main org menu from More Info");
+
                     clearNavigationSession(phone);
                     saveToSession(phone, "menuShow", true);
                     return HandleLevel1(phone, new String[0], false);
@@ -3106,7 +2834,7 @@ public class ussdcontroller {
                 "Keep this reference number safe.\n" +
                 "You will receive an SMS shortly.";
         } catch (Exception e) {
-            System.err.println("Error saving NABTEB registration: " + e.getMessage());
+
             return "END Error saving registration. Please try again.";
         }
     }
@@ -3748,7 +3476,7 @@ public class ussdcontroller {
         String searchTerm = (String) retrieveFromSession(phone, "searchTerm");
         Integer currentPage = (Integer) retrieveFromSession(phone, "currentPage");
         Integer totalPages = (Integer) retrieveFromSession(phone, "totalPages");
-        System.out.println("handleMoreResults - SearchTerm: " + searchTerm + ", CurrentPage: " + currentPage + ", TotalPages: " + totalPages);
+
     
         if (searchTerm == null || currentPage == null) {
             return "END No search term found. Please try again.";
@@ -3883,7 +3611,7 @@ public class ussdcontroller {
                         String ussdSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
                         smsService.sendCacNinValidationSms(ussdSessionId, phone, rec);
                     } catch (Exception smsErr) {
-                        System.err.println("sms dispatch best-effort failed phone=" + phone + " action=CAC_NIN_VALIDATE");
+
                     }
 
                     saveToSession(phone, "cacRegField", "businessName");
@@ -3988,7 +3716,7 @@ public class ussdcontroller {
                 String ussdSessionId = (String) retrieveFromSession(phone, "ussdSessionId");
                 smsService.sendCacRegistrationSms(ussdSessionId, phone, saved);
             } catch (Exception smsErr) {
-                System.err.println("sms dispatch best-effort failed phone=" + phone + " action=CAC_REG");
+
             }
 
             return "END Registration Successful\n\n" +
@@ -3996,7 +3724,7 @@ public class ussdcontroller {
                 "Status: PENDING\n" +
                 "Ref: " + saved.getReferenceId();
         } catch (Exception e) {
-            System.err.println("Error saving CAC registration: " + e.getMessage());
+
             return "END Error saving registration. Please try again.";
         }
     }
@@ -4112,12 +3840,12 @@ public class ussdcontroller {
 
     private void saveToSession(String phoneNumber, String key, Object value) {
         if (phoneNumber == null || phoneNumber.isEmpty()) {
-            System.err.println("⚠️ Cannot save to session - phone number is null/empty");
+
             return;
         }
         
         if (key == null || key.isEmpty()) {
-            System.err.println("⚠️ Cannot save to session - key is null/empty");
+
             return;
         }
         
@@ -4132,8 +3860,7 @@ public class ussdcontroller {
                 redisTemplate.opsForValue().set(sessionkey, value, timeoutMinutes, TimeUnit.MINUTES);
             }
         } catch (Exception e) {
-            System.err.println("⚠️ Error saving to session (key: " + key + "): " + e.getMessage());
-            // Don't throw - just log and continue
+            throw new IllegalStateException("USSD session write failed");
         }
     }
 
@@ -4172,11 +3899,10 @@ public class ussdcontroller {
         try {
             String sessionkey = phoneNumber + ":" + key;
             Object value = redisTemplate.opsForValue().get(sessionkey);
-            System.out.println("Retrieved from session - Key: " + sessionkey + ", Value: " + value);
+
             return value;
         } catch (Exception e) {
-            System.err.println("Error retrieving from session: " + e.getMessage());
-            return null;
+            throw new IllegalStateException("USSD session read failed");
         }
     }
 
@@ -4184,7 +3910,7 @@ public class ussdcontroller {
         // CRITICAL: Validate organization context before starting enrollment
         Long selectedOrgId = getLongFromSession(phone, "selectedOrgId");
         if (selectedOrgId == null || !selectedOrgId.equals(org.getId())) {
-            System.out.println("Invalid session state for FHIS enrollment - resetting");
+
             clearNavigationSession(phone);
             return "END Session expired. Please search for the organization again.";
         }
@@ -4223,51 +3949,23 @@ public class ussdcontroller {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Error extending sessions: " + e.getMessage());
+
         }
     }
 
     private void resetUserSession(String phoneNumber) {
-        System.out.println("🔄 Session reset requested for: " + phoneNumber);
-        
-        if (phoneNumber == null || phoneNumber.isEmpty()) {
-            System.err.println("⚠️ Cannot reset session - phone number is null/empty");
-            return;
-        }
-        
+        if (phoneNumber == null || phoneNumber.isEmpty()) return;
         try {
-            // Try to get keys matching pattern
-            Set<String> allKeys = redisTemplate.keys(phoneNumber + ":*");
-            
-            if (allKeys != null && !allKeys.isEmpty()) {
-                redisTemplate.delete(allKeys);
-                System.out.println("✅ Deleted " + allKeys.size() + " keys for " + phoneNumber);
-            } else {
-                System.out.println("ℹ️ No keys found to delete for " + phoneNumber);
-            }
-        } catch (Exception e) {
-            System.err.println("⚠️ Error in bulk reset: " + e.getMessage());
-            
-            // Fallback: try individual deletion
-            int deleted = 0;
-            for (String key : SessionKeys.ALL_KEYS) {
-                try {
-                    String fullKey = phoneNumber + ":" + key;
-                    if (Boolean.TRUE.equals(redisTemplate.hasKey(fullKey))) {
-                        redisTemplate.delete(fullKey);
-                        deleted++;
-                    }
-                } catch (Exception ex) {
-                    // Silently continue
-                }
-            }
-            System.out.println("✅ Fallback: Deleted " + deleted + " keys individually");
+            Set<String> keys = redisTemplate.keys(phoneNumber + ":*");
+            if (keys != null && !keys.isEmpty()) redisTemplate.delete(keys);
+        } catch (Exception ex) {
+            // A partial reset must not allow a prior flow to take over a new session.
+            throw new IllegalStateException("USSD session reset failed");
         }
     }
 
-
     private String handleFHISEnrollmentFlow(String phoneNumber, String inputText) {
-        System.out.println("FHIS Enrollment Flow - Phone: " + phoneNumber + ", Input: " + inputText);
+
         try {
             String viewingDetails = (String) retrieveFromSession(phoneNumber, "viewingDetails");
             if ("true".equals(viewingDetails) && "0".equals(inputText)) {
@@ -4293,7 +3991,7 @@ public class ussdcontroller {
             FhisEnrollment enrollment = GetorCreateFhisEnrollment(phoneNumber);
             if (enrollment == null) {
                 // No enrollment exists, we should be in sector selection
-                System.out.println("No enrollment found, handling sector selection");
+
                 return handleSectorSelection(phoneNumber, lastChoice);
             }
     
@@ -4304,7 +4002,7 @@ public class ussdcontroller {
                 currentStep = "sector_selection";
             }
     
-            System.out.println("Current Step: " + currentStep + ", Last Choice: " + lastChoice);
+
             
             String continuationResult = handleContinuationChoice(phoneNumber, lastChoice, enrollment);
             if (continuationResult != null) {
@@ -4337,8 +4035,8 @@ public class ussdcontroller {
                     return "END Invalid enrollment step. Please start over.";
             }
         } catch (Exception e) {
-            System.err.println("Error in FHIS enrollment flow: " + e.getMessage());
-            e.printStackTrace(); // Added stack trace for debugging
+
+             // Added stack trace for debugging
             clearenrollmentSession(phoneNumber);
             return "END An error occurred. Please try again.";
         }
@@ -4441,7 +4139,7 @@ public class ussdcontroller {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Error checking existing enrollment: " + e.getMessage());
+
         }
         return null;
     }
@@ -4483,13 +4181,13 @@ public class ussdcontroller {
     }
 
     private String handleSectorSelection(String phone, String choice) {
-        System.out.println("=== SECTOR SELECTION DEBUG ===");
-        System.out.println("Phone: " + phone);
-        System.out.println("Raw choice: '" + choice + "'");
+
+
+
         
         // Clean the choice
         choice = choice != null ? choice.trim() : "";
-        System.out.println("Cleaned choice: '" + choice + "'");
+
         
         // Check if we're already handling existing enrollment
         String handlingExisting = (String) retrieveFromSession(phone, "handlingExistingEnrollment");
@@ -4500,23 +4198,23 @@ public class ussdcontroller {
                 Optional<FhisEnrollment> existing = FhisEnrollmentRepository.findByPhoneNumber(phone);
                 
                 if (existing.isPresent()) {
-                    System.out.println("Found existing enrollment, handling choice");
+
                     return handleExistingEnrollmentChoice(phone, choice);
                 }
             } catch (Exception e) {
-                System.err.println("Error checking existing enrollments: " + e.getMessage());
-                e.printStackTrace();
+
+
             }
         }
         
         // FRESH ENROLLMENT - Handle sector selection choices
         switch (choice) {
             case "1":
-                System.out.println("Creating new Informal enrollment");
+
                 return createNewEnrollment(phone, "Informal");
                 
             case "2":
-                System.out.println("Creating new Formal enrollment");
+
                 return createNewEnrollment(phone, "Formal");
                 
             case "0":
@@ -4525,7 +4223,7 @@ public class ussdcontroller {
                 return HandleLevel1(phone, new String[0], true);
                 
             default:
-                System.out.println("Invalid choice received: '" + choice + "'");
+
                 return "CON Invalid selection. Please try again.\n" +
                        "Select enrollment type:\n" +
                        "1. Informal Sector\n" +
@@ -4535,7 +4233,7 @@ public class ussdcontroller {
     }
     private String createNewEnrollment(String phone, String enrollmentType) {
         try {
-            System.out.println("Creating new " + enrollmentType + " enrollment for phone: " + phone);
+
             
             FhisEnrollment enrollment = new FhisEnrollment();
             enrollment.setPhoneNumber(phone);
@@ -4546,7 +4244,7 @@ public class ussdcontroller {
             
             // Save to database
             FhisEnrollment savedEnrollment = FhisEnrollmentRepository.save(enrollment);
-            System.out.println("Saved enrollment with ID: " + savedEnrollment.getId());
+
             
             // Set session variables
             saveToSession(phone, "currentFlow", "fhis_enrollment");
@@ -4556,8 +4254,8 @@ public class ussdcontroller {
             return "CON " + enrollmentType.toUpperCase() + " SECTOR\nEnter your FHIS Number:";
             
         } catch (Exception e) {
-            System.err.println("Error creating new enrollment: " + e.getMessage());
-            e.printStackTrace();
+
+
             return "END Error creating enrollment. Please try again.";
         }
     }
@@ -4609,7 +4307,7 @@ public class ussdcontroller {
             }
             
         } catch (Exception e) {
-            System.err.println("Error handling existing enrollment choice: " + e.getMessage());
+
             return "END Error. Please try again.";
         }
     }
@@ -4772,7 +4470,7 @@ public class ussdcontroller {
                 return moveToNextStage(phone, enrollment);
             }
         } catch (Exception e) {
-            System.err.println("Database error: " + e.getMessage());
+
             return "CON System error. Please try again:";
         }
     }
@@ -4847,7 +4545,7 @@ public class ussdcontroller {
     
     private String handleProfessionalData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
-        System.out.println("Professional Data - Field: " + currentField + ", Input: " + inputText);
+
     
         if (currentField == null) {
             currentField = determineCurrentFieldFromEnrollment(enrollment, "professional_data");
@@ -4909,7 +4607,7 @@ public class ussdcontroller {
     }
     private String handleSocialData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
-        System.out.println("Social Data - Field: " + currentField + ", Input: " + inputText);
+
 
         // CRITICAL FIX: If currentField is null, determine what field we need
         if (currentField == null) {
@@ -4919,10 +4617,10 @@ public class ussdcontroller {
                 return moveToNextStage(phone, enrollment);
             }
             saveToSession(phone, "currentField", currentField);
-            System.out.println("Auto-determined currentField: " + currentField);
+
         }
     
-        System.out.println("Social Data - Field: " + currentField + ", Input: " + inputText);
+
 
         if (inputText == null || inputText.trim().isEmpty()) {
             return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
@@ -4977,7 +4675,7 @@ public class ussdcontroller {
 
     private String handleCorporateData(String phone, String inputText, FhisEnrollment enrollment) {
         String currentField = (String) retrieveFromSession(phone, "currentField");
-        System.out.println("Corporate Data - Field: " + currentField + ", Input: " + inputText);
+
 
         // CRITICAL FIX: If currentField is null, determine what field we need
         if (currentField == null) {
@@ -4987,10 +4685,10 @@ public class ussdcontroller {
                 return moveToNextStage(phone, enrollment);
             }
             saveToSession(phone, "currentField", currentField);
-            System.out.println("Auto-determined currentField: " + currentField);
+
         }
         
-        System.out.println("Corporate Data - Field: " + currentField + ", Input: " + inputText);
+
 
         if (inputText == null || inputText.trim().isEmpty()) {
             return "CON Field cannot be empty. Please enter " + getFieldDisplayName(currentField) + ":";
@@ -5062,7 +4760,7 @@ public class ussdcontroller {
             lastChoice = parts.length > 0 ? parts[parts.length - 1] : "";
         }
         
-        System.out.println("Formal Social Data - Field: " + currentField + ", Last Input: '" + lastChoice + "'");
+
         
         if (currentField == null) {
             currentField = determineCurrentFieldFromEnrollment(enrollment, "social_data_formal");
@@ -5125,7 +4823,7 @@ public class ussdcontroller {
         String enrollmentType = enrollment.getEnrollmentType();
         String currentStep = enrollment.getCurrentStep();
         
-        System.out.println("Moving to next stage from: " + currentStep + " for " + enrollmentType);
+
         
         switch (currentStep) {
             case "personal_data":
@@ -5205,7 +4903,7 @@ public class ussdcontroller {
                        "0. Cancel Enrollment";
                        
             default:
-                System.err.println("Unknown step in moveToNextStage: " + currentStep);
+
                 return "END Enrollment submitted successfully! Thank you for enrolling in the FHIS program.";
         }
     }
@@ -5233,7 +4931,7 @@ public class ussdcontroller {
             saveToSession(phone, "currentField", currentField);
         }
         
-        System.out.println("Healthcare Provider Data - Field: " + currentField + ", Input: " + lastInput);
+
         
         switch (currentField) {
             case "hospitalSearch":
@@ -5341,7 +5039,7 @@ public class ussdcontroller {
             return menu.toString();
             
         } catch (Exception e) {
-            System.err.println("Error showing hospital list: " + e.getMessage());
+
             return "END Error loading hospitals. Please try again.";
         }
     }
@@ -5388,7 +5086,7 @@ public class ussdcontroller {
             return menu.toString();
             
         } catch (Exception e) {
-            System.err.println("Error searching hospitals: " + e.getMessage());
+
             return "END Error searching hospitals. Please try again.";
         }
     }
@@ -5438,7 +5136,7 @@ public class ussdcontroller {
         } catch (NumberFormatException e) {
             return "CON Invalid input. Please enter a number:";
         } catch (Exception e) {
-            System.err.println("Error in hospital selection: " + e.getMessage());
+
             return "END Error processing selection. Please try again.";
         }
     }
@@ -5487,8 +5185,8 @@ public class ussdcontroller {
             lastChoice = parts.length > 0 ? parts[parts.length - 1] : "";
         }
         
-        System.out.println("Dependants Data - Field: " + currentField + ", Last Input: '" + lastChoice + "'");
-        System.out.println("Full input text: '" + inputText + "'");
+
+
         
         // Check for continuation choice first
         Boolean waiting = (Boolean) retrieveFromSession(phone, "waitingForContinue");
@@ -5525,7 +5223,7 @@ public class ussdcontroller {
             enrollment.setNumberOfChildren(0);
             enrollment.setUpdatedAt(LocalDateTime.now());
             FhisEnrollmentRepository.save(enrollment);
-            System.out.println("Set numberOfChildren to 0 based on text input: " + lastChoice);
+
             return moveToNextStage(phone, enrollment);
         }
         
@@ -5542,15 +5240,15 @@ public class ussdcontroller {
             enrollment.setNumberOfChildren(children);
             enrollment.setUpdatedAt(LocalDateTime.now());
             FhisEnrollmentRepository.save(enrollment);
-            System.out.println("Successfully set numberOfChildren to: " + children);
+
             return moveToNextStage(phone, enrollment);
             
         } catch (NumberFormatException e) {
-            System.err.println("Invalid number format: '" + lastChoice + "'");
+
             return "CON Invalid input. Please enter a number (0-20) or 'no' if you have no children:";
         } catch (Exception e) {
-            System.err.println("Error in handleDependantsData: " + e.getMessage());
-            e.printStackTrace();
+
+
             return "CON Error processing input. Please enter number of children (0-20):";
         }
     }
@@ -5664,22 +5362,22 @@ public class ussdcontroller {
     
     private FhisEnrollment GetorCreateFhisEnrollment(String phoneNumber) {
         try {
-            System.out.println("Getting enrollment for phone: " + phoneNumber);
+
             Optional<FhisEnrollment> existingEnrollment = FhisEnrollmentRepository.findByPhoneNumber(phoneNumber);
             
             if (existingEnrollment.isPresent()) {
-                System.out.println("Found existing enrollment for phone: " + phoneNumber);
+
                 FhisEnrollment enrollment = existingEnrollment.get();
-                System.out.println("Enrollment details: " + enrollment.toString());
+
                 return enrollment;
             }
             
-            System.out.println("No existing enrollment found for phone: " + phoneNumber);
+
             return null;
             
         } catch (Exception e) {
-            System.err.println("Error getting FHIS enrollment: " + e.getMessage());
-            e.printStackTrace();
+
+
             return null;
         }
     }
@@ -5696,10 +5394,10 @@ public class ussdcontroller {
                     redisTemplate.delete(fullKey);
                 }
             }
-            System.out.println("Cleared " + keys.length + " session keys for: " + phoneNumber);
+
         } catch (Exception e) {
-            System.err.println("Error clearing session keys: " + e.getMessage());
-            e.printStackTrace();
+
+
         }
     }
 
@@ -5815,7 +5513,7 @@ public class ussdcontroller {
             
             return false;
         } catch (Exception e) {
-            System.err.println("Error in duplicate detection: " + e.getMessage());
+
             return false; // Don't block on errors
         }
     }
@@ -5852,7 +5550,7 @@ public class ussdcontroller {
             String ussdSessionId = (String) retrieveFromSession(checkerPhone, "ussdSessionId");
             smsService.sendCacVerificationSms(ussdSessionId, reg.getPhoneNumber(), reg);
         } catch (Exception smsErr) {
-            System.err.println("sms dispatch best-effort failed phone=" + reg.getPhoneNumber() + " action=CAC_VERIFY");
+
         }
 
         return "END VERIFICATION RESULT\n\n" +
@@ -6012,7 +5710,7 @@ public class ussdcontroller {
             try {
                 smsService.sendFfsRegistrationSms(ussdSessionId, phone, reg);
             } catch (Exception smsEx) {
-                System.err.println("⚠️ SMS dispatch failed (non-fatal): " + smsEx.getMessage());
+
             }
             // Clear registration session
             clearRegistrationSession(phone);
@@ -6022,7 +5720,7 @@ public class ussdcontroller {
                 "You will receive SMS confirmation shortly.";
                 
         } catch (Exception e) {
-            System.err.println("Error saving registration: " + e.getMessage());
+
             return "END Error saving registration. Please try again.";
         }
     }

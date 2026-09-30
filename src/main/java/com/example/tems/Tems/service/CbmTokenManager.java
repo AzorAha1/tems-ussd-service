@@ -124,7 +124,6 @@ public class CbmTokenManager {
             Map<String, Object> tokenBody = response.getBody();
             String token = (String) tokenBody.get("access_token");
             String grantedScope = (String) tokenBody.get("scope");
-            System.out.println("🔍 CBM ussd token granted scope: " + grantedScope);
 
             int expiresIn = tokenBody.get("expires_in") != null
                 ? ((Number) tokenBody.get("expires_in")).intValue() : 3600;
@@ -134,7 +133,6 @@ public class CbmTokenManager {
             return token;
 
         } catch (Exception e) {
-            System.err.println("⚠️ CBM ussd write token fetch failed: " + e.getMessage());
             throw new IllegalStateException("Could not obtain CBM ussd.write token", e);
         }
     }

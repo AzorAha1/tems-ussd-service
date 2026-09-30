@@ -60,7 +60,7 @@ public class SmsServiceClientImpl implements SmsServiceClient {
 
             if (status == 400 || status == 401 || status == 413 || status == 422) {
                 System.err.println("SMS " + status + " (no retry) refId=" + refId
-                    + " body=" + e.getResponseBodyAsString());
+                    + " responseBody=redacted");
                 return new SmsSendResponse(false, status, e.getResponseBodyAsString(), null, correlationId);
             }
 
@@ -77,7 +77,7 @@ public class SmsServiceClientImpl implements SmsServiceClient {
                 System.out.println("SMS timeout/connect error - retrying once. refId=" + refId);
                 return sendWithRetry(body, correlationId, refId, attempt + 1);
             }
-            System.err.println("SMS timeout - gave up after retry. refId=" + refId + " error=" + e.getMessage());
+            System.err.println("SMS timeout - gave up after retry. refId=" + refId + " errorType=" + e.getClass().getSimpleName());
             return new SmsSendResponse(false, 0, e.getMessage(), null, correlationId);
         }
     }

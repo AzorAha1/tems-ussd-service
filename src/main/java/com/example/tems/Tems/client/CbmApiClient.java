@@ -14,6 +14,8 @@ import java.util.Optional;
 @Component
 public class CbmApiClient {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(CbmApiClient.class);
+
     private final RestTemplate restTemplate;
     private final CbmApiConfig config;
     private final CbmTokenManager tokenManager;
@@ -31,11 +33,9 @@ public class CbmApiClient {
             headers.setBearerAuth(tokenManager.getAccessToken());
             HttpEntity<Void> request = new HttpEntity<>(headers);
 
-            System.out.println("🔍 CBM verify - calling: " + url);
             ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
 
             Map<String, Object> body = response.getBody();
-            System.out.println("🔍 CBM verify - response: " + body);
 
             if (body != null && Boolean.TRUE.equals(body.get("success"))) {
                 return Optional.ofNullable((Map<String, Object>) body.get("data"));
@@ -43,12 +43,10 @@ public class CbmApiClient {
             return Optional.empty();
 
         } catch (HttpClientErrorException e) {
-            System.err.println("⚠️ CBM verify failed - URL: " + url
-                + " | Status: " + e.getStatusCode()
-                + " | Body: " + e.getResponseBodyAsString());
+            LOG.warn("cbm_verification_failure status={}", e.getStatusCode().value());
             return Optional.empty();
         } catch (Exception e) {
-            System.err.println("⚠️ CBM verify failed - URL: " + url + " | " + e.getMessage());
+            LOG.warn("cbm_verification_failure type={}", e.getClass().getSimpleName());
             return Optional.empty();
         }
     }
