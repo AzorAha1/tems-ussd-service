@@ -351,6 +351,11 @@ public class ussdcontroller {
             // A delayed callback for a different session must not erase the current session.
             if (inbound.event() == SessionEvent.CONTINUE) return "END Session expired. Please dial again.";
             resetUserSession(phone);
+            String dialInput = inbound.input(gateway.cumulative());
+            if (dialInput.matches("[0-9*#]{0,25}")) {
+                USSD_LOG.info("ussd_dial correlation={} service={} input={}",
+                    correlation, inbound.serviceCode(), dialInput);
+            }
             Route route = routeResolver.resolve(inbound, gateway.cumulative(),
                 inbound.event() == SessionEvent.BEGIN || changedId);
             boolean allowed = route != Route.TMF || isTextMeFoodAllowedPhone(phone);
