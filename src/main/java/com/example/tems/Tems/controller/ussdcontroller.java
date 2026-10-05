@@ -1575,10 +1575,26 @@ public class ussdcontroller {
         }
 
         // Welcome menu - this will be shown when input is "7447"
-        return "CON Welcome to TEMS SERVICE\n\n" +
-            "1. Search Organizations\n" +
+        return "CON Welcome to TEMS SERVICE\n\n" + temsMenuOptions();
+    }
+    private String temsMenuOptions() {
+        if (CBM_ENABLED) {
+            return "1. City Boy Movement\n" +
+                "2. Search Organizations\n" +
+                "3. About TEMS\n" +
+                "0. Exit";
+        }
+        return "1. Search Organizations\n" +
             "2. About TEMS\n" +
             "0. Exit";
+    }
+    private String startCbmFromTemsMenu(String phone) {
+        saveToSession(phone, "ussdRoute", Route.CBM.name());
+        saveToSession(phone, "awaitingSearchTerm", null);
+        saveToSession(phone, "cbmFlow", "main_menu");
+        saveToSession(phone, "menuShown", "true");
+        saveToSession(phone, "lastInteraction", System.currentTimeMillis());
+        return showCBMMenu();
     }
 
     private String HandleLevel2(String text, String phone, String[] parts) {
@@ -1641,15 +1657,20 @@ public class ussdcontroller {
             // Validate input
             if (text == null || text.trim().isEmpty()) {
 
-                return "CON Invalid input. Please select:\n\n" +
-                    "1. Search Organizations\n" +
-                    "2. About TEMS\n" +
-                    "0. Exit";
+                return "CON Invalid input. Please select:\n\n" + temsMenuOptions();
             }
             
             String choice = text.trim();
 
-            
+            if (CBM_ENABLED) {
+                if ("1".equals(choice)) {
+                    return startCbmFromTemsMenu(phone);
+                } else if ("2".equals(choice)) {
+                    choice = "1";   // Search Organizations
+                } else if ("3".equals(choice)) {
+                    choice = "2";   // About TEMS
+                }
+            }
             // Handle menu choices
             switch (choice) {
                 case "1":
@@ -1674,10 +1695,7 @@ public class ussdcontroller {
                     
                 default:
 
-                    return "CON Invalid choice. Please select:\n\n" +
-                        "1. Search Organizations\n" +
-                        "2. About TEMS\n" +
-                        "0. Exit";
+                    return "CON Invalid choice. Please select:\n\n" + temsMenuOptions();
             }
             
         } catch (Exception e) {
