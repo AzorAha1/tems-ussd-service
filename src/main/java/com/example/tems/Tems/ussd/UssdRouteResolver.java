@@ -17,7 +17,7 @@ public class UssdRouteResolver {
     // These suffixes open City Boy Movement: *7447*100*2#, *7447*100*20#, *7447*100*27#.
     // Both long and short forms are listed in case the network shortens the suffix to its first digit.
     // Any other suffix after 100 stays on the normal TEMS menu.
-    private static final Set<String> CBM_AFTER_100 = Set.of("1", "2", "7");
+    private static final Set<String> CBM_AFTER_100 = Set.of("1", "2", "7", "27");
 
     public Route resolve(UssdInboundRequest request, boolean cumulative, boolean startEvidence) {
         String service = normalize(request.serviceCode());
