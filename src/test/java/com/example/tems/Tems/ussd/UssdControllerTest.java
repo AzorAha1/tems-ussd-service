@@ -16,6 +16,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -135,6 +139,17 @@ class UssdControllerTest {
         state.clear();
         hml("", null);
         assertTrue(hml("7447*1", null).contains("CITY BOY MOVEMENT"));
+    }
+    @Test void hmlDialAfter100GoesToCbmAndOtherSuffixesStayOnTems() throws Exception {
+        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
+        String temsMenu = "CON Welcome to TEMS\n\n1.CBM\n2.Search Organization\n3.About TEMS\n4.Exit";
+        assertTrue(hml("7447*100*2", "a1").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("2", "a1").contains("ABOUT CITY BOY"));
+        assertTrue(hml("7447*100*27", "a2").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("7447*100*20", "a3").contains("CITY BOY MOVEMENT"));
+        assertEquals(temsMenu, hml("7447*100*6", "a4"));
+        assertEquals(temsMenu, hml("7447*100", "a5"));
+        verifyNoInteractions(relay);
     }
 
     @Test void deniedCallerDoesNotEnterTmf() throws Exception {

@@ -1,6 +1,7 @@
 package com.example.tems.Tems.ussd;
 
 import java.util.Map;
+import java.util.Set;
 
 /** Initial-entry resolution only. Dialogue input must never be passed here mid-session. */
 @org.springframework.stereotype.Component
@@ -11,6 +12,12 @@ public class UssdRouteResolver {
     Map.of("10", Route.TMF, "27", Route.CBM, "100", Route.TEMS,
         // City Boy Movement sub-codes *7447*1# to *7447*5#
         "1", Route.CBM, "2", Route.CBM, "3", Route.CBM, "4", Route.CBM, "5", Route.CBM);
+
+    // MTN passes digits typed after *7447*100 through unchanged (production logs: 7447*100*2, 7447*100*6).
+    // These suffixes open City Boy Movement: *7447*100*2#, *7447*100*20#, *7447*100*27#.
+    // Both long and short forms are listed in case the network shortens the suffix to its first digit.
+    // Any other suffix after 100 stays on the normal TEMS menu.
+    private static final Set<String> CBM_AFTER_100 = Set.of("2", "20", "27");
 
     public Route resolve(UssdInboundRequest request, boolean cumulative, boolean startEvidence) {
         String service = normalize(request.serviceCode());
@@ -33,6 +40,9 @@ public class UssdRouteResolver {
         if (value.equals("744710")) return Route.TMF;
         if (value.equals("744727")) return Route.CBM;
         String[] parts = value.split("\\*", -1);
+        if (parts.length >= 3 && parts[0].equals("7447") && parts[1].equals("100")) {
+            return CBM_AFTER_100.contains(parts[2]) ? Route.CBM : Route.TEMS;
+        }
         if (parts.length >= 2 && parts[0].equals("7447")) return EXTENSIONS.getOrDefault(parts[1], Route.UNKNOWN);
         return Route.UNKNOWN;
     }
