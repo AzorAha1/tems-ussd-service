@@ -8,7 +8,9 @@ public class UssdRouteResolver {
     public enum Route { TEMS, TMF, CBM, UNKNOWN }
     // private static final Map<String, Route> EXTENSIONS = Map.of("10", Route.TMF, "27", Route.CBM, "1", Route.CBM);
     private static final Map<String, Route> EXTENSIONS =
-    Map.of("10", Route.TMF, "27", Route.CBM, "1", Route.CBM, "100", Route.TEMS);
+    Map.of("10", Route.TMF, "27", Route.CBM, "100", Route.TEMS,
+        // City Boy Movement sub-codes *7447*1# to *7447*5#
+        "1", Route.CBM, "2", Route.CBM, "3", Route.CBM, "4", Route.CBM, "5", Route.CBM);
 
     public Route resolve(UssdInboundRequest request, boolean cumulative, boolean startEvidence) {
         String service = normalize(request.serviceCode());

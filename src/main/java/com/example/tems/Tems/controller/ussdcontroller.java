@@ -341,7 +341,12 @@ public class ussdcontroller {
         String storedRoute = (String) retrieveFromSession(phone, "ussdRoute");
         boolean hasState = storedRoute != null || "true".equalsIgnoreCase(String.valueOf(retrieveFromSession(phone, "menuShown")));
         boolean changedId = !sessionId.isEmpty() && !sessionId.equals(storedId);
-        boolean fresh = inbound.event() == SessionEvent.BEGIN || changedId || !hasState;
+        // A full dial string (e.g. 7447*1) only arrives on the first message of a call, so it always starts
+        // a new session, even when the gateway omits or reuses the session ID.
+        String typed = inbound.input(gateway.cumulative()).replaceAll("^\\*|#$", "");
+        boolean dialString = typed.matches("7447\\*\\d+");
+        boolean fresh = inbound.event() == SessionEvent.BEGIN || changedId || !hasState || dialString;
+        
         if (inbound.event() == SessionEvent.END) {
             if (sessionId.isEmpty() || storedId == null || sessionId.equals(storedId)) resetUserSession(phone);
             return "END Session closed.";
@@ -1669,6 +1674,8 @@ public class ussdcontroller {
                     choice = "1";   // Search Organizations
                 } else if ("3".equals(choice)) {
                     choice = "2";   // About TEMS
+                } else if ("4".equals(choice)) {
+                    choice = "0";   // Exit (0 still works too)
                 }
             }
             // Handle menu choices

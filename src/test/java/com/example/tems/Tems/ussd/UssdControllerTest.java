@@ -93,12 +93,48 @@ class UssdControllerTest {
         assertTrue(call(ORDINARY_PHONE, "s2", "*7447*27#", "", "27*2", "CONTINUE").contains("ABOUT CITY BOY"));
     }
 
-    @Test void ordinaryReplyOneDoesNotSelectCbm() throws Exception {
+    @Test void ordinaryReplyOneIsATemsMenuChoice() throws Exception {
         call(ORDINARY_PHONE, "s1", "*7447#", "", "", "");
-        call(ORDINARY_PHONE, "s1", "*7447#", "1", "", "");
-        assertNull(state.get(ORDINARY_PHONE + ":cbmFlow"));
-        assertEquals("TEMS", state.get(ORDINARY_PHONE + ":ussdRoute"));
+        // Option 1 on the TEMS menu is City Boy Movement.
+        assertTrue(call(ORDINARY_PHONE, "s1", "*7447#", "1", "", "").contains("CITY BOY MOVEMENT"));
+        assertEquals("main_menu", state.get(ORDINARY_PHONE + ":cbmFlow"));
         verifyNoInteractions(relay);
+    }
+
+    // HML always sends shortcode *7447#; the dialled sub-code is only in input on the first message.
+    private String hml(String input, String session) throws Exception {
+        String sessionField = session == null ? "" : ",\"session_id\":\"" + session + "\"";
+        return mvc.perform(post("/ussd").contentType("application/json").header("Accept", "text/plain")
+            .content("{\"telco\":\"MTN\",\"shortcode\":\"*7447#\",\"product_id\":123,\"phone\":\"2348000000001\",\"input\":\""
+                + input + "\"" + sessionField + "}"))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+    }
+
+    @Test void hmlSubCodeAdvancesWithSingleOrFullInput() throws Exception {
+        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
+        assertTrue(hml("", "base").contains("Welcome to TEMS"));
+        assertTrue(hml("7447*1", "x1").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("7447*1*2", "x1").contains("ABOUT CITY BOY"));
+        assertTrue(hml("7447*1", "x2").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("2", "x2").contains("ABOUT CITY BOY"));
+    }
+
+    @Test void hmlSubCodeWorksWhenTelcoChargeAcceptanceIsForwarded() throws Exception {
+        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
+        // The key pressed on the telco charge screen can arrive appended to the dial string.
+        assertTrue(hml("7447*1*1", "c1").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("7447*1*1*2", "c1").contains("ABOUT CITY BOY"));
+        assertTrue(hml("7447*1*1", "c2").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("2", "c2").contains("ABOUT CITY BOY"));
+        verifyNoInteractions(relay);
+    }
+
+    @Test void hmlSubCodeStartsFreshWhenSessionIdIsReusedOrMissing() throws Exception {
+        hml("", "same");
+        assertTrue(hml("7447*1", "same").contains("CITY BOY MOVEMENT"));
+        state.clear();
+        hml("", null);
+        assertTrue(hml("7447*1", null).contains("CITY BOY MOVEMENT"));
     }
 
     @Test void deniedCallerDoesNotEnterTmf() throws Exception {
