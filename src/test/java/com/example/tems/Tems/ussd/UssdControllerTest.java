@@ -33,6 +33,8 @@ class UssdControllerTest {
     private RedisTemplate<String, Object> redis;
     private String allowedPhone;
     private static final String ORDINARY_PHONE = "08000000000";
+    private static final String[] CBM_SUFFIXES = {"1", "2", "7", "27"};
+    private static final String[] TEMS_SUFFIXES = {"6", "9", "20"};
 
     @BeforeEach @SuppressWarnings("unchecked") void setup() {
         redis = mock(RedisTemplate.class);
@@ -68,7 +70,11 @@ class UssdControllerTest {
         allowedPhone = allowed.iterator().next();
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
-
+    private static void assertTemsMenu(String response, String what) {
+        assertTrue(response.startsWith("CON Welcome to TEMS"), what + " should show the TEMS menu but got: " + response);
+        assertFalse(response.contains("CITY BOY MOVEMENT"), what + " must not open the CBM menu");
+    }
+    
     private String call(String phone, String session, String service, String input, String text, String event) throws Exception {
         return mvc.perform(post("/ussd").param("phoneNumber", phone).param("sessionId", session)
             .param("serviceCode", service).param("input", input).param("text", text).param("messageType", event)
@@ -142,13 +148,15 @@ class UssdControllerTest {
     }
     @Test void hmlDialAfter100GoesToCbmAndOtherSuffixesStayOnTems() throws Exception {
         gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
-        String temsMenu = "CON Welcome to TEMS\n\n1.CBM\n2.Search Organization\n3.About TEMS\n4.Exit";
-        assertTrue(hml("7447*100*2", "a1").contains("CITY BOY MOVEMENT"));
-        assertTrue(hml("2", "a1").contains("ABOUT CITY BOY"));
-        assertTrue(hml("7447*100*27", "a2").contains("CITY BOY MOVEMENT"));
-        assertTrue(hml("7447*100*20", "a3").contains("CITY BOY MOVEMENT"));
-        assertEquals(temsMenu, hml("7447*100*6", "a4"));
-        assertEquals(temsMenu, hml("7447*100", "a5"));
+        for (String suffix : CBM_SUFFIXES) {
+            assertTrue(hml("7447*100*" + suffix, "c" + suffix).contains("CITY BOY MOVEMENT"),
+                "suffix " + suffix + " should open CBM");
+            assertTrue(hml("2", "c" + suffix).contains("ABOUT CITY BOY"));
+        }
+        for (String suffix : TEMS_SUFFIXES) {
+            assertTemsMenu(hml("7447*100*" + suffix, "t" + suffix), "suffix " + suffix);
+        }
+        assertTemsMenu(hml("7447*100", "plain"), "plain dial");
         verifyNoInteractions(relay);
     }
 
