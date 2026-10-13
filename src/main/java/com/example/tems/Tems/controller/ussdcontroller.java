@@ -996,7 +996,7 @@ public class ussdcontroller {
                 saveToSession(phone, "tmfFlow", "benefits_menu");
                 return showTextMeFoodBenefits();
             case "5":
-                return "END TEXT ME FOOD HELP\n\nFor support, contact the\nfoundation help desk.\n\nDial *7447*10# to restart.";
+                return "END TEXT ME FOOD HELP\n\nFor support, contact the\nfoundation help desk.\n\nDial *7447*100*10# to restart.";
             case "6":
             case "0":
                 clearTextMeFoodSession(phone);
