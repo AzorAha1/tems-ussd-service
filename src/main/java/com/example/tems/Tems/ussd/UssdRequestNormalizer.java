@@ -1,5 +1,6 @@
 package com.example.tems.Tems.ussd;
 
+import com.example.tems.Tems.ussd.UssdInboundRequest.SessionEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -24,7 +25,8 @@ public final class UssdRequestNormalizer {
             pick(params, body, "session_id", "sessionId"),
             pick(params, body, "serviceCode", "service_code", "shortCode", "shortcode"),
             pick(params, body, "input", "ussdString", "ussd_string", "message"),
-            pick(params, body, "text"), eventMapping.getOrDefault(event, SessionEvent.UNKNOWN));
+            pick(params, body, "text"), eventMapping.getOrDefault(event, SessionEvent.UNKNOWN),
+            pick(params, body, "telco", "network", "operator"));
     }
 
     private String pick(Map<String, String> params, Map<String, String> body, String... aliases) {

@@ -18,11 +18,9 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
 /**
- * Client for the HML aggregator "Initiate subscription" call.
+ * Client for the HML aggregator subscription calls (Initiate and Unsubscribe).
  *
- * NOT called from the USSD flow today. On MTN, the "charged @N12 / 1. Continue" screen is shown by MTN/HML
- * before /ussd is ever called, so calling initiateSubscription for an MTN user as well could bill them twice.
- * It therefore does nothing unless aggregator.subscription.enabled=true.
+ * It does nothing unless aggregator.subscription.enabled=true, so it can be deployed safely.
  *
  * Which network a phone is on comes from the "telco" field HML sends with each request. Guessing from the number's
  * prefix is only a last-resort fallback (numbers can be ported between networks).
@@ -32,6 +30,9 @@ public class AggregatorService {
     private static final Logger LOG = LoggerFactory.getLogger(AggregatorService.class);
 
     public enum Telco { MTN, AIRTEL, NINEMOBILE, GLO, UNKNOWN }
+
+    /** STARTED: HML accepted the request. SKIPPED: nothing was sent (disabled, no key, unknown network). FAILED: HML or the network call failed. */
+    public enum InitiateResult { STARTED, SKIPPED, FAILED }
 
     // Approximate Nigerian prefixes, used ONLY when HML did not send a telco. Verify against the current NCC list.
     private static final Set<String> MTN_PREFIXES = Set.of("703", "704", "706", "803", "806", "810", "813", "814", "816", "903", "906", "913", "916");
@@ -63,50 +64,28 @@ public class AggregatorService {
         this.restTemplate = new RestTemplate(factory);
     }
 
-    /** Preferred: pass the telco HML sent with the request (for example "MTN"). */
-    public boolean initiateSubscription(String phoneNumber, String telcoFromHml) {
+    /** Ask HML to start the charge. The result of the charge arrives later at the webhook. */
+    public InitiateResult initiate(String phoneNumber, String telcoFromHml) {
         Telco telco = resolveTelco(telcoFromHml, phoneNumber);
-        if (!enabled) {
-            LOG.info("aggregator_subscription skipped reason=disabled telco={}", telco);
-            return false;
-        }
-        if (apiKey == null || apiKey.isBlank()) {
-            LOG.warn("aggregator_subscription skipped reason=no_api_key telco={}", telco);
-            return false;
-        }
-        String host = hostFor(telco);
-        if (host == null) {
-            LOG.warn("aggregator_subscription skipped reason=no_host_for_telco telco={}", telco);
-            return false;
-        }
+        String host = readyHost(telco, "initiate");
+        if (host == null) return InitiateResult.SKIPPED;
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(apiKey);
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("product_id", productId);               // HML's numeric product id, not the MTN subscription id
-        payload.put("phone", toNationalFormat(phoneNumber)); // same format as HML's documented example
-        payload.put("telco", telco.name());
+        Map<String, Object> payload = basePayload(phoneNumber, telco);
         payload.put("channel", "USSD");
+        return post(host + "/product/subscription/initiate", payload, telco, "initiate")
+            ? InitiateResult.STARTED : InitiateResult.FAILED;
+    }
 
-        try {
-            @SuppressWarnings("rawtypes")
-            ResponseEntity<Map> response = restTemplate.postForEntity(
-                host + "/product/subscription/initiate", new HttpEntity<>(payload, headers), Map.class);
-            @SuppressWarnings("rawtypes")
-            Map body = response.getBody();
-            boolean ok = response.getStatusCode().is2xxSuccessful() && body != null && Boolean.TRUE.equals(body.get("status"));
-            // Never log the phone number or the response body (personal data).
-            LOG.info("aggregator_subscription telco={} http={} ok={}", telco, response.getStatusCode().value(), ok);
-            return ok;
-        } catch (RestClientResponseException e) {
-            LOG.warn("aggregator_subscription failed telco={} http={}", telco, e.getStatusCode().value());
-            return false;
-        } catch (Exception e) {
-            LOG.warn("aggregator_subscription failed telco={} type={}", telco, e.getClass().getSimpleName());
-            return false;
-        }
+    /** Stop a subscription (HML's docs: POST /product/subscription/unsubscribe). Not used by the USSD flow yet. */
+    public boolean unsubscribe(String phoneNumber, String telcoFromHml) {
+        Telco telco = resolveTelco(telcoFromHml, phoneNumber);
+        String host = readyHost(telco, "unsubscribe");
+        if (host == null) return false;
+        return post(host + "/product/subscription/unsubscribe", basePayload(phoneNumber, telco), telco, "unsubscribe");
+    }
+
+    public boolean initiateSubscription(String phoneNumber, String telcoFromHml) {
+        return initiate(phoneNumber, telcoFromHml) == InitiateResult.STARTED;
     }
 
     /** Legacy entry point: no telco from HML, so it falls back to the prefix guess (logged as a warning). */
@@ -114,7 +93,54 @@ public class AggregatorService {
         return initiateSubscription(phoneNumber, null);
     }
 
-    // ---- helpers (package-private static so they are easy to unit test) ----
+    // ---- internals ----
+
+    /** The host to call, or null (with a log line) if this call must not be made. */
+    private String readyHost(Telco telco, String action) {
+        if (!enabled) {
+            LOG.info("aggregator_{} skipped reason=disabled telco={}", action, telco);
+            return null;
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            LOG.warn("aggregator_{} skipped reason=no_api_key telco={}", action, telco);
+            return null;
+        }
+        String host = hostFor(telco);
+        if (host == null) {
+            LOG.warn("aggregator_{} skipped reason=no_host_for_telco telco={}", action, telco);
+        }
+        return host;
+    }
+
+    private Map<String, Object> basePayload(String phoneNumber, Telco telco) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("product_id", productId);               // HML's numeric product id, not the MTN subscription id
+        payload.put("phone", toNationalFormat(phoneNumber)); // same format as HML's documented example
+        payload.put("telco", telco.name());
+        return payload;
+    }
+
+    private boolean post(String url, Map<String, Object> payload, Telco telco, String action) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(apiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            @SuppressWarnings("rawtypes")
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, new HttpEntity<>(payload, headers), Map.class);
+            @SuppressWarnings("rawtypes")
+            Map body = response.getBody();
+            boolean ok = response.getStatusCode().is2xxSuccessful() && body != null && Boolean.TRUE.equals(body.get("status"));
+            // Never log the phone number or the response body (personal data).
+            LOG.info("aggregator_{} telco={} http={} ok={}", action, telco, response.getStatusCode().value(), ok);
+            return ok;
+        } catch (RestClientResponseException e) {
+            LOG.warn("aggregator_{} failed telco={} http={}", action, telco, e.getStatusCode().value());
+            return false;
+        } catch (Exception e) {
+            LOG.warn("aggregator_{} failed telco={} type={}", action, telco, e.getClass().getSimpleName());
+            return false;
+        }
+    }
 
     private String hostFor(Telco telco) {
         switch (telco) {

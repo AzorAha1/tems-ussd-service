@@ -58,6 +58,7 @@ import com.example.tems.Tems.repository.HospitalRepository;
 import com.example.tems.Tems.repository.OrganizationRepository;
 import com.example.tems.Tems.service.AggregatorService;
 import com.example.tems.Tems.service.NinLookupService;
+import com.example.tems.Tems.service.PaymentGate;
 import com.example.tems.Tems.service.Smsservice;
 import com.example.tems.Tems.service.SubscriptionService;
 
@@ -88,6 +89,8 @@ public class ussdcontroller {
     private UssdRouteResolver routeResolver = new UssdRouteResolver();
     @Autowired
     private UssdGatewayProperties gateway = new UssdGatewayProperties();
+    @Autowired
+    private PaymentGate paymentGate;
 
    
 
@@ -367,6 +370,10 @@ public class ussdcontroller {
             USSD_LOG.info("ussd_route correlation={} event={} route={} access={} fresh=true", correlation,
                 inbound.event(), route, allowed ? "allowed" : "denied");
             if (route == Route.UNKNOWN) return "END Unknown USSD route. Please dial *7447#.";
+            if (!(route == Route.TMF && allowed)) {
+                String blocked = paymentGate == null ? null : paymentGate.check(phone, inbound.telco());
+                if (blocked != null) return blocked;
+            }
             saveToSession(phone, "ussdSessionId", sessionId.isEmpty() ? null : sessionId);
             saveToSession(phone, "ussdRoute", allowed ? route.name() : Route.TEMS.name());
             saveToSession(phone, "menuShown", "true");

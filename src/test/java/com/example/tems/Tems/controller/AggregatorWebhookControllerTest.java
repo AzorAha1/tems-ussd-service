@@ -1,6 +1,9 @@
 package com.example.tems.Tems.controller;
 
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -15,6 +18,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class AggregatorWebhookControllerTest {
     private static final String TEMS_IDENTITY = "PD-17625145556900";   // product 576 on HML
+    private static final int ONE_DAY = 1440;                            // default paid session, in minutes
     private SubscriptionService subscriptions;
     private MockMvc mvc;
 
@@ -32,14 +36,14 @@ class AggregatorWebhookControllerTest {
         return "{\"type\":\"" + type + "\",\"telco\":\"MTN\",\"product\":{\"id\":576,\"identity\":\"" + identity + "\"}" + details + "}";
     }
 
-    @Test void newSubscriptionForTemsProductActivatesSession() throws Exception {
+    @Test void newSubscriptionForTemsProductActivatesAOneDaySession() throws Exception {
         send(body("SYNC_NOTIFICATION", TEMS_IDENTITY, "2347072603735")).andExpect(status().isOk());
-        verify(subscriptions).activateSession("07072603735", 120);
+        verify(subscriptions).activateSession("07072603735", ONE_DAY);
     }
 
     @Test void renewalActivatesSessionToo() throws Exception {
         send(body("RENEWAL_NOTIFICATION", TEMS_IDENTITY, "2347072603735")).andExpect(status().isOk());
-        verify(subscriptions).activateSession("07072603735", 120);
+        verify(subscriptions).activateSession("07072603735", ONE_DAY);
     }
 
     @Test void theOldWrongIdentitiesAreNoLongerAccepted() throws Exception {
@@ -49,10 +53,16 @@ class AggregatorWebhookControllerTest {
         verifyNoInteractions(subscriptions);
     }
 
-    @Test void chargeFailuresAreAcknowledgedWithoutActivating() throws Exception {
+    @Test void notEnoughAirtimeIsRecordedAsABalanceFailure() throws Exception {
         send(body("INSUFFICIENT_BALANCE", TEMS_IDENTITY, "2347072603735")).andExpect(status().isOk());
+        verify(subscriptions).markFailed("07072603735", true);
+        verify(subscriptions, never()).activateSession(anyString(), anyInt());
+    }
+
+    @Test void otherChargingErrorsAreRecordedAsAnErrorFailure() throws Exception {
         send(body("CHARGING_ERROR", TEMS_IDENTITY, "2347072603735")).andExpect(status().isOk());
-        verifyNoInteractions(subscriptions);
+        verify(subscriptions).markFailed("07072603735", false);
+        verify(subscriptions, never()).activateSession(anyString(), anyInt());
     }
 
     @Test void typesWithoutAPhoneAreAcknowledgedNotCrashed() throws Exception {

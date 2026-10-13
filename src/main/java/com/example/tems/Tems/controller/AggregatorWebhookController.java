@@ -21,9 +21,12 @@ public class AggregatorWebhookController {
 
     // HML puts the product's own identity (the "PD-..." value) in notification.product.identity.
     // For product 576 that is PD-17625145556900. Comma-separated if there are ever several products.
-    // (The old code compared it with the MTN subscription id and a 2022 test product, so every real notification was rejected.)
     @Value("${aggregator.webhook.accepted-identities:PD-17625145556900}")
     private String acceptedIdentities = "PD-17625145556900";
+
+    /** How long a paid session lasts. 1440 = 24 hours, matching the product's validity_days of 1. */
+    @Value("${ussd.payment.session-minutes:1440}")
+    private int sessionMinutes = 1440;
 
     private final SubscriptionService subscriptionService;
 
@@ -51,8 +54,9 @@ public class AggregatorWebhookController {
         }
 
         boolean success = "SYNC_NOTIFICATION".equals(type) || "RENEWAL_NOTIFICATION".equals(type);
-        boolean failure = "CHARGING_ERROR".equals(type) || "INSUFFICIENT_BALANCE".equals(type);
-        if (!success && !failure) {
+        boolean noBalance = "INSUFFICIENT_BALANCE".equals(type);
+        boolean chargeError = "CHARGING_ERROR".equals(type);
+        if (!success && !noBalance && !chargeError) {
             // Other notification types (for example the deprecated TELCO_RAW_SYNC) carry no phone number; acknowledge them.
             LOG.info("aggregator_webhook ignored type={}", type);
             return ResponseEntity.ok("Webhook notification received successfully");
@@ -67,9 +71,11 @@ public class AggregatorWebhookController {
         String cleanNumber = normalizePhoneNumber(rawPhone);
 
         if (success) {
-            subscriptionService.activateSession(cleanNumber, 120);
-            LOG.info("aggregator_webhook activated type={} phone={}", type, maskPhone(cleanNumber));
+            subscriptionService.activateSession(cleanNumber, sessionMinutes);
+            LOG.info("aggregator_webhook activated type={} phone={} minutes={}", type, maskPhone(cleanNumber), sessionMinutes);
         } else {
+            // Recorded so a dial that is waiting for this payment can tell the user what happened.
+            subscriptionService.markFailed(cleanNumber, noBalance);
             LOG.info("aggregator_webhook charge_failed type={} phone={}", type, maskPhone(cleanNumber));
         }
         return ResponseEntity.ok("Webhook notification received successfully");
