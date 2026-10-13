@@ -130,8 +130,10 @@ public class AggregatorService {
             @SuppressWarnings("rawtypes")
             Map body = response.getBody();
             boolean ok = response.getStatusCode().is2xxSuccessful() && body != null && Boolean.TRUE.equals(body.get("status"));
-            // Never log the phone number or the response body (personal data).
-            LOG.info("aggregator_{} telco={} http={} ok={}", action, telco, response.getStatusCode().value(), ok);
+            // Log only HML's status code and a short message (digit runs masked), never the phone number or the full body.
+            LOG.info("aggregator_{} telco={} http={} ok={} hml_status_code={} hml_message={}", action, telco,
+                response.getStatusCode().value(), ok,
+                body == null ? null : body.get("status_code"), safeMessage(body == null ? null : body.get("message")));
             return ok;
         } catch (RestClientResponseException e) {
             LOG.warn("aggregator_{} failed telco={} http={}", action, telco, e.getStatusCode().value());
@@ -140,6 +142,13 @@ public class AggregatorService {
             LOG.warn("aggregator_{} failed telco={} type={}", action, telco, e.getClass().getSimpleName());
             return false;
         }
+    }
+
+    /** A short, log-safe version of HML's message: long digit runs (phone numbers, ids) are masked. */
+    static String safeMessage(Object message) {
+        if (message == null) return null;
+        String text = String.valueOf(message).replaceAll("\\d{6,}", "***");
+        return text.length() > 80 ? text.substring(0, 80) : text;
     }
 
     private String hostFor(Telco telco) {
