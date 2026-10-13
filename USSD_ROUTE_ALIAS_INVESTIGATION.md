@@ -6,7 +6,7 @@ Fetched `origin/main` before editing. Both HEAD and remote main were `53b03f7ca2
 
 Reviewed recent routing changes `63805a7`, `72a9368`, `4966103`, the subscription/aggregator rewrite `4d7edd2`, payment gate `7f6dcc2`, and current aggregator update `53b03f7`. The October routing commits changed the exact legacy CBM suffix set from `2,20,27` to `1,2,7,27`; the source comment still mentions `20`, although current code intentionally routes it to TEMS. Comments referencing production logs are historical claims, not live records available in this investigation.
 
-**Route 1:** Phase 1/2 implementation is ready for a live experiment; Phase 5/6 activation still requires the two-callback handset test. **TMF route 10:** `*7447*100*10#` now routes directly to the existing TMF application, with `*7447*10#` retained as a compatibility alias. TMF does not use the diagnostic menu. See the TMF update below for production limitations.
+**Route 1:** Phase 1/2 implementation is ready for a live experiment; Phase 5/6 activation still requires the two-callback handset test. **TMF route 10:** `*7447*10#` explicitly canonicalizes to `100*10`, and `*7447*100*10#` parses to that same canonical route; a single canonical registry entry then selects the existing TMF handler. TMF does not use the diagnostic menu. See the TMF update below for production limitations.
 
 ## 1. Current behavior
 
@@ -85,7 +85,7 @@ Even an initial menu visible on the handset is insufficient evidence of A. Gatew
 | `USSD_GATEWAY.md` | Links the temporary experiment and documents its configuration boundaries |
 | `USSD_ROUTE_ALIAS_INVESTIGATION.md` | This evidence report and operator procedure |
 
-The `UssdRouteResolver` now registers the prefixed TMF application target `100*10`. Its legacy route `10` continues to select the same TMF handler; the TMF help screen now advertises `*7447*100*10#`. Downstream services, payment policies, access restrictions, security rules, deployment configuration and `.env` remain unchanged. No new route-1 alias registry is activated pending proof. The parser provides the focused abstraction for a later config/table-backed mapping rather than more organization-specific matchers.
+The `UssdRouteResolver` defines the public alias `10 -> 100*10` and registers TMF only under canonical `100*10`; the TMF help screen now advertises `*7447*100*10#`. Downstream services, payment policies, access restrictions, security rules, deployment configuration and `.env` remain unchanged. No new route-1 alias registry is activated pending proof. The parser provides the focused abstraction for a later config/table-backed mapping rather than more organization-specific matchers.
 
 ## 5. Tests
 
@@ -177,7 +177,7 @@ After a successful live test, wire the parser into the existing resolver with a 
 
 ## TMF prefixed-route update — 2026-10-13
 
-At the user's request, TMF's advertised entry is now `*7447*100*10#`. `UssdRouteResolver` uses an exact prefixed application registry (`100*10 -> TMF`) and the existing parser. It handles the full code in service metadata, full input, parent service plus `100*10` suffix, and `serviceCode=*7447*100#` plus initial suffix `10`. The old `*7447*10#` entry remains an application alias to the same handler. Network metadata is preserved, and continuation choices still use the stored TMF flow rather than resolving a route again.
+At the user's request, TMF's advertised entry is now `*7447*100*10#`. `UssdRouteResolver` now parses the entry, canonicalizes with `ROUTE_ALIASES={10 -> 100*10}`, and resolves through `CANONICAL_ROUTES={100*10 -> TMF}`. There is no independent `10 -> TMF` target definition. It handles the full code in service metadata, full input, parent service plus `100*10` suffix, and `serviceCode=*7447*100#` plus initial suffix `10`. The short `*7447*10#` entry canonicalizes before handler selection; the prefixed entry also yields canonical `100*10`. Network metadata is preserved, and continuation choices still use the stored TMF flow rather than resolving a route again.
 
 This routing is active without enabling the diagnostic test switch. No new TMF tests or live diagnostic gate were added. The requested verification is a compile/package build with test execution skipped; the earlier 89-test result describes the previous investigation commit, not this TMF update.
 
@@ -186,3 +186,39 @@ The user explicitly requested retaining the current demo implementation. The exi
 Changed files for this update: `UssdRouteResolver.java` (prefixed target), `UssdRouteParser.java` (transport-only suffix), `ussdcontroller.java` (advertised restart code), `application.properties` (approved alias-test number), `USSD_GATEWAY.md` and this report (current behavior and limitations).
 
 Build result for the TMF update: **`mvn clean package -DskipTests` — BUILD SUCCESS**. Test execution was skipped as requested; no live TMF or network test was performed.
+
+
+## Explicit TMF canonicalization refactor — 2026-10-13
+
+This update supersedes the earlier independent direct/prefixed handler mappings and the earlier request to skip tests. Base revision on fetched `longest`: `9f5b3ac`.
+
+The sequence is now one initial-entry operation:
+
+1. `UssdRouteParser.initialPath` parses original service/input metadata into base, public route and transport prefix.
+2. `UssdRouteResolver.canonicalize` constructs the application entry key and applies `ROUTE_ALIASES`: only `10 -> 100*10`. Already-prefixed `100*10` remains unchanged.
+3. `CANONICAL_ROUTES` resolves `100*10 -> TMF`. This is the sole TMF target definition. Exact existing CBM/TEMS keys remain in the same registry, with the existing TEMS fallback for unregistered numeric suffixes after prefix 100.
+4. The controller selects the existing TMF menu/workflow and records the public route, original transport prefix and canonical route with session state. Continuations use the stored handler and canonical metadata; they do not call entry resolution again.
+
+`UssdInboundRequest.serviceCode` is never rewritten. Initial diagnostics now include `originalServiceCode`, `publicRoute`, `transportPrefix`, `canonicalRoute` and final `handler`. Follow-up diagnostics use stored routing metadata, so a reply of `1` cannot become a new route in those logs. Canonical diagnostics allow only registered identifiers; arbitrary dialogue, unknown canonical strings, full phones, credentials and PINs remain excluded. New routing markers participate in the existing session TTL extension and are cleared on END/reset.
+
+Local source evidence for both accepted entry representations:
+
+```json
+{"originalServiceCode":"*7447*10#","publicRoute":"10","transportPrefix":"","canonicalRoute":"100*10","handler":"TMF"}
+{"originalServiceCode":"*7447*100*10#","publicRoute":"10","transportPrefix":"100","canonicalRoute":"100*10","handler":"TMF"}
+```
+
+These are sanitized examples of expected application diagnostics, not live gateway captures. Both application routes genuinely converge before handler selection. No redirect, network redial or upstream session-identity modification occurs.
+
+Changed files for this refactor:
+
+- `UssdRouteResolver.java`: alias table, one canonical target registry, structured entry result; removes all direct TMF routing branches.
+- `ussdcontroller.java`: uses the entry result once, stores routing markers, reads them for continuation diagnostics and extends their TTL.
+- `UssdDiagnosticTrace.java`: explicit public/canonical route diagnostics with identifier validation.
+- `UssdRoutingTest.java`: full, split and suffix-only entry forms canonicalize to the same route; original service/input metadata and prefix are preserved.
+- `UssdControllerTest.java`: both TMF entries share canonical state; spy assertions prove continuations never invoke entry resolution; diagnostics and END cleanup are checked. The former split-CBM-gap test now expects the consistent parsed CBM target.
+- `USSD_GATEWAY.md` and this report: current canonicalization behavior, verification and practical limits.
+
+Verification for this update: **`./mvnw test` passed with 98 tests, 0 failures and 0 errors**. **`./mvnw clean package` also passed with all 98 tests enabled**, producing the executable Spring Boot JAR. No `-DskipTests` was used for either verification command. The repository's existing integration-tagged Spring context test is excluded by default; its production database/Redis dependencies are not contacted. The test commands use a temporary Java 17 toolchain, Maven wrapper distribution/cache and Maven Central mirror. A sandboxed run could not initialize Mockito's instrumentation; the same complete suite passed outside the sandbox without code/test workarounds or skip flags.
+
+A handset can still show System Error if the gateway terminates the shorter entry, forwards missing/changing session IDs, expects a different JSON/plain response contract, rejects Accept before controller handling, exceeds its callback timeout, cannot deliver callbacks/responses, or encounters unavailable Redis/services. TMF access restrictions and current payment policy remain; the demo business flow is retained as explicitly requested. Identical Java application routing does not establish live network session continuity or deployment of this revision.

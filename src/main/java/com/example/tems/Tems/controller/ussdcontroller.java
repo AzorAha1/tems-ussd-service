@@ -253,6 +253,7 @@ public class ussdcontroller {
             "cacRegName", "cacRegBusinessName", "cacRegRcNumber",
             "cacRegEmail", "cacRegState", "cacRegOccupation",
             "cacRegNin", "cacRegDob", "cacRegGender", "cacRegLga", "cacRegAddress","ussdSessionId", "ussdRoute",
+            "ussdPublicRoute", "ussdTransportPrefix", "ussdCanonicalRoute",
             "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
             "tmfFlow", "tmfField", "tmfPhone", "tmfVerified",
             "tmfStatePage", "tmfSelectedState", "tmfLgaPage", "tmfSelectedLga",
@@ -377,12 +378,18 @@ public class ussdcontroller {
         Map<String, Boolean> routingKeys = new java.util.LinkedHashMap<>();
         if (gateway.isDiagnosticsEnabled()) {
             for (String key : List.of("menuShown", "ussdSessionId", "ussdRoute", "currentFlow",
+                    "ussdPublicRoute", "ussdTransportPrefix", "ussdCanonicalRoute",
                     "selectedOrgId", "tmfFlow", "cbmFlow", "cbmUssdRelayActive", "currentSubMenu")) {
                 routingKeys.put(key, Boolean.TRUE.equals(redisTemplate.hasKey(phone + ":" + key)));
             }
         }
-        diagnostic.routing(fresh, fresh ? routeParser.initialPath(inbound, gateway.cumulative(),
-            inbound.event() == SessionEvent.BEGIN || changedId) : routeParser.parse(inbound.serviceCode()), routingKeys);
+        if (!fresh) {
+            String publicRoute = (String) retrieveFromSession(phone, "ussdPublicRoute");
+            String transportPrefix = (String) retrieveFromSession(phone, "ussdTransportPrefix");
+            diagnostic.routing(false, new UssdRouteParser.Path(publicRoute != null, "7447",
+                transportPrefix == null ? "" : transportPrefix, publicRoute == null ? "" : publicRoute, List.of()), routingKeys);
+            diagnostic.canonicalRoute((String) retrieveFromSession(phone, "ussdCanonicalRoute"));
+        }
         diagnostic.handler("session-validation", "pending");
         
         if (inbound.event() == SessionEvent.END) {
@@ -394,8 +401,11 @@ public class ussdcontroller {
             // A delayed callback for a different session must not erase the current session.
             if (inbound.event() == SessionEvent.CONTINUE) return "END Session expired. Please dial again.";
             resetUserSession(phone);
-            Route route = routeResolver.resolve(inbound, gateway.cumulative(),
+            UssdRouteResolver.Resolution resolution = routeResolver.resolveEntry(inbound, gateway.cumulative(),
                 inbound.event() == SessionEvent.BEGIN || changedId);
+            diagnostic.routing(true, resolution.path(), routingKeys);
+            diagnostic.canonicalRoute(resolution.canonicalRoute());
+            Route route = resolution.target();
             boolean allowed = route != Route.TMF || isTextMeFoodAllowedPhone(phone);
             diagnostic.handler(allowed ? route.name() : Route.TEMS.name(), allowed ? "allowed" : "allowlist-denied");
             USSD_LOG.info("ussd_route correlation={} event={} route={} access={} fresh=true", correlation,
@@ -410,6 +420,9 @@ public class ussdcontroller {
             }
             saveToSession(phone, "ussdSessionId", sessionId.isEmpty() ? null : sessionId);
             saveToSession(phone, "ussdRoute", allowed ? route.name() : Route.TEMS.name());
+            saveToSession(phone, "ussdPublicRoute", resolution.path().publicRoute());
+            saveToSession(phone, "ussdTransportPrefix", resolution.path().transportPrefix());
+            saveToSession(phone, "ussdCanonicalRoute", resolution.canonicalRoute());
             saveToSession(phone, "menuShown", "true");
             saveToSession(phone, "lastInteraction", System.currentTimeMillis());
             if (!allowed) {

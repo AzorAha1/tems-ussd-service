@@ -35,6 +35,7 @@ class UssdControllerTest {
     private String allowedPhone;
     private PaymentGate payment;
     private Smsservice sms;
+    private UssdRouteResolver resolver;
     private static final String ORDINARY_PHONE = "08000000000";
     private static final String[] CBM_SUFFIXES = {"1", "2", "7", "27"};
     private static final String[] TEMS_SUFFIXES = {"6", "9", "20"};
@@ -71,6 +72,8 @@ class UssdControllerTest {
         gateway.getMessageTypes().put("END", UssdInboundRequest.SessionEvent.END);
         ReflectionTestUtils.setField(controller, "redisTemplate", redis);
         ReflectionTestUtils.setField(controller, "gateway", gateway);
+        resolver = spy(new UssdRouteResolver());
+        ReflectionTestUtils.setField(controller, "routeResolver", resolver);
         ReflectionTestUtils.setField(controller, "paymentGate", payment);
         ReflectionTestUtils.setField(controller, "routeProbe", new UssdRouteProbe(redis, gateway, new UssdRouteParser()));
         Set<String> allowed = (Set<String>) ReflectionTestUtils.getField(ussdcontroller.class, "TMF_TEST_PHONE_NUMBERS");
@@ -364,12 +367,49 @@ class UssdControllerTest {
         assertTrue(call(ORDINARY_PHONE, "direct", "*7447*1#", "2", "", "CONTINUE").contains("ABOUT CITY BOY"));
     }
 
-    @Test void investigationReproducesSplitTransportMetadataGapInExistingResolver() throws Exception {
-        // The diagnostic parser understands this shape; production routing is deferred until live verification.
+    @Test void splitTransportMetadataUsesTheSameParsedCbmCanonicalTarget() throws Exception {
         String response = mvc.perform(post("/ussd").param("phone", ORDINARY_PHONE).param("sessionId", "split-legacy")
             .param("serviceCode", "*7447*100#").param("ussdString", "1").header("Accept", "text/plain"))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertTemsMenu(response, "current split transport callback");
+        assertTrue(response.contains("CITY BOY MOVEMENT"));
+        assertEquals("100*1", state.get(ORDINARY_PHONE + ":ussdCanonicalRoute"));
+    }
+
+    @Test void bothTmfEntriesShareCanonicalStateAndFollowupOneNeverResolvesAgain(CapturedOutput output) throws Exception {
+        gateway.setDiagnosticsEnabled(true);
+        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
+        for (String service : List.of("*7447*10#", "*7447*100*10#")) {
+            String session = service.equals("*7447*10#") ? "short-tmf" : "canonical-tmf";
+            String menu = call(allowedPhone, session, service, "", "", "BEGIN");
+            assertTrue(menu.contains("TEXT ME FOOD FOUNDATION"));
+            assertEquals("100*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
+            assertEquals("10", state.get(allowedPhone + ":ussdPublicRoute"));
+            assertEquals(service.contains("100") ? "100" : "", state.get(allowedPhone + ":ussdTransportPrefix"));
+            assertTrue(call(allowedPhone, session, service, "1", "", "CONTINUE").contains("Enter 4-digit PIN"));
+            assertEquals("pin", state.get(allowedPhone + ":tmfFlow"));
+            assertEquals("100*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
+        }
+        verify(resolver, times(2)).resolveEntry(any(), anyBoolean(), anyBoolean());
+        assertTrue(output.getAll().contains("\"originalServiceCode\":\"*7447*10#\""));
+        assertTrue(output.getAll().contains("\"originalServiceCode\":\"*7447*100*10#\""));
+        assertTrue(output.getAll().contains("\"canonicalRoute\":\"100*10\""));
+        assertTrue(output.getAll().contains("\"publicRoute\":\"10\""));
+        assertTrue(output.getAll().contains("\"transportPrefix\":\"100\""));
+        assertTrue(output.getAll().contains("\"handler\":\"TMF\""));
+        assertFalse(output.getAll().contains(allowedPhone));
+        verify(redis, atLeastOnce()).expire(eq(allowedPhone + ":ussdCanonicalRoute"), eq(15L), eq(TimeUnit.MINUTES));
+    }
+
+    @Test void splitTmfCallbackCanonicalizesAndParentOnlyContinuationRetainsCanonicalState() throws Exception {
+        mvc.perform(post("/ussd").param("phone", allowedPhone).param("sessionId", "split-tmf")
+            .param("serviceCode", "*7447*100#").param("ussdString", "10").header("Accept", "text/plain"))
+            .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("TEXT ME FOOD FOUNDATION")));
+        assertEquals("100*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
+        assertTrue(call(allowedPhone, "split-tmf", "*7447#", "1", "", "CONTINUE").contains("Enter 4-digit PIN"));
+        assertEquals("100*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
+        verify(resolver, times(1)).resolveEntry(any(), anyBoolean(), anyBoolean());
+        assertTrue(call(allowedPhone, "split-tmf", "*7447#", "0", "", "CONTINUE").startsWith("END "));
+        assertFalse(state.containsKey(allowedPhone + ":ussdCanonicalRoute"));
     }
 
     @Test void probeRequiresConfiguredNumberAndNormalizesApprovedInternationalNumber() throws Exception {
