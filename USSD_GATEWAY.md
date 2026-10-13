@@ -1,5 +1,7 @@
 # USSD gateway integration and verification
 
+For the gated public `*7447*1#` two-callback experiment, configuration and current evidence, see [USSD_ROUTE_ALIAS_INVESTIGATION.md](USSD_ROUTE_ALIAS_INVESTIGATION.md). `USSD_DIAGNOSTICS_ENABLED` and `USSD_ALIAS_TEST_ENABLED` default to false. The test always requires `USSD_ALIAS_TEST_NUMBERS` and a stable network session ID, uses isolated Redis state, and does not activate a production alias. The application's current configured input-mode default is CUMULATIVE; the standalone Java properties object's default remains SINGLE.
+
 The `/ussd` endpoint supports GET and POST. It does not require a database for the isolated regression suite. Running the complete application still requires its normal runtime services. Nothing in this change provisions an MNO/gateway prefix or deploys the service.
 
 ## Configuration

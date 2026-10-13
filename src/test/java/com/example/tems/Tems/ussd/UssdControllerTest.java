@@ -3,6 +3,7 @@ package com.example.tems.Tems.ussd;
 import com.example.tems.Tems.controller.ussdcontroller;
 import com.example.tems.Tems.client.CbmUssdRelayClient;
 import com.example.tems.Tems.service.Smsservice;
+import com.example.tems.Tems.service.PaymentGate;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +33,8 @@ class UssdControllerTest {
     private CbmUssdRelayClient relay;
     private RedisTemplate<String, Object> redis;
     private String allowedPhone;
+    private PaymentGate payment;
+    private Smsservice sms;
     private static final String ORDINARY_PHONE = "08000000000";
     private static final String[] CBM_SUFFIXES = {"1", "2", "7", "27"};
     private static final String[] TEMS_SUFFIXES = {"6", "9", "20"};
@@ -58,14 +61,18 @@ class UssdControllerTest {
         });
         relay = mock(CbmUssdRelayClient.class);
         when(relay.relay(any(), anyString(), anyString())).thenReturn("CON Relay next question");
+        sms = mock(Smsservice.class);
+        payment = mock(PaymentGate.class);
         ussdcontroller controller = new ussdcontroller(null, null, null, null, null, null, null,
-            null, null, mock(Smsservice.class), null, null, relay);
+            null, null, sms, null, null, relay);
         gateway = new UssdGatewayProperties();
         gateway.getMessageTypes().put("BEGIN", UssdInboundRequest.SessionEvent.BEGIN);
         gateway.getMessageTypes().put("CONTINUE", UssdInboundRequest.SessionEvent.CONTINUE);
         gateway.getMessageTypes().put("END", UssdInboundRequest.SessionEvent.END);
         ReflectionTestUtils.setField(controller, "redisTemplate", redis);
         ReflectionTestUtils.setField(controller, "gateway", gateway);
+        ReflectionTestUtils.setField(controller, "paymentGate", payment);
+        ReflectionTestUtils.setField(controller, "routeProbe", new UssdRouteProbe(redis, gateway, new UssdRouteParser()));
         Set<String> allowed = (Set<String>) ReflectionTestUtils.getField(ussdcontroller.class, "TMF_TEST_PHONE_NUMBERS");
         allowedPhone = allowed.iterator().next();
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
@@ -246,5 +253,155 @@ class UssdControllerTest {
         gateway.setResponseMode(UssdGatewayProperties.ResponseMode.JSON);
         mvc.perform(post("/ussd").header("Accept", "text/plain").contentType("application/json").content("[]"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.continue").value(false));
+    }
+
+    private void enableProbe() {
+        gateway.setAliasTestEnabled(true);
+        gateway.setDiagnosticsEnabled(true);
+        gateway.setAliasTestNumbers(Set.of(ORDINARY_PHONE));
+    }
+
+    @Test void probeCompletesTwoCallbacksWithoutApplicationDependencies(CapturedOutput output) throws Exception {
+        enableProbe();
+        // Stale application Redis must remain untouched by the transport experiment.
+        state.put(ORDINARY_PHONE + ":ussdRoute", "TMF");
+        state.put(ORDINARY_PHONE + ":ussdSessionId", "stale");
+        state.put(ORDINARY_PHONE + ":selectedOrgId", 999L);
+        assertEquals(UssdRouteProbe.MENU, call(ORDINARY_PHONE, "probe", "*7447*1#", "", "", "BEGIN"));
+        assertEquals("END Route alias session test successful.",
+            call(ORDINARY_PHONE, "probe", "*7447*1#", "1", "", "CONTINUE"));
+        assertEquals("TMF", state.get(ORDINARY_PHONE + ":ussdRoute"));
+        assertEquals(999L, state.get(ORDINARY_PHONE + ":selectedOrgId"));
+        assertFalse(state.containsKey(UssdRouteProbe.key(ORDINARY_PHONE, "probe")));
+        verifyNoInteractions(payment, sms, relay);
+        assertTrue(output.getAll().contains("route-alias-test"));
+        assertTrue(output.getAll().contains("FOLLOW_UP"));
+        assertFalse(output.getAll().contains(ORDINARY_PHONE));
+    }
+
+    @Test void probeSamePhoneDifferentSessionCannotCompletePriorMenu() throws Exception {
+        enableProbe();
+        call(ORDINARY_PHONE, "first", "*7447*1#", "", "", "BEGIN");
+        assertTrue(call(ORDINARY_PHONE, "second", "*7447*1#", "1", "", "CONTINUE").contains("expired"));
+        assertTrue(state.containsKey(UssdRouteProbe.key(ORDINARY_PHONE, "first")));
+        assertTrue(call(ORDINARY_PHONE, "first", "*7447#", "1", "", "CONTINUE").contains("successful"));
+        verifyNoInteractions(payment, sms, relay);
+    }
+
+    @Test void probeExitTimeoutAndExplicitRestart() throws Exception {
+        enableProbe();
+        call(ORDINARY_PHONE, "exit", "*7447*1#", "", "", "BEGIN");
+        assertEquals("END Route alias test exited.", call(ORDINARY_PHONE, "exit", "*7447*1#", "0", "", "CONTINUE"));
+        call(ORDINARY_PHONE, "timeout", "*7447*1#", "", "", "BEGIN");
+        state.remove(UssdRouteProbe.key(ORDINARY_PHONE, "timeout")); // Redis TTL expired.
+        assertTrue(call(ORDINARY_PHONE, "timeout", "*7447*1#", "1", "", "CONTINUE").contains("expired"));
+        assertTrue(call(ORDINARY_PHONE, "timeout", "*7447*1#", "1", "", "").contains("expired"));
+        state.put(UssdRouteProbe.key(ORDINARY_PHONE, "corrupt"), "invalid-old-marker");
+        assertTrue(call(ORDINARY_PHONE, "corrupt", "*7447*1#", "1", "", "CONTINUE").contains("expired"));
+        assertEquals(UssdRouteProbe.MENU, call(ORDINARY_PHONE, "new", "*7447*1#", "", "", "BEGIN"));
+        verify(redis.opsForValue(), atLeastOnce()).set(anyString(), anyMap(), eq(3L), eq(TimeUnit.MINUTES));
+        verifyNoInteractions(payment, sms, relay);
+    }
+
+    @Test void probeMissingSessionFailsClosedAndEndClosesOnlyItsSession() throws Exception {
+        enableProbe();
+        assertTrue(call(ORDINARY_PHONE, "", "*7447*1#", "", "", "BEGIN").contains("stable session ID"));
+        call(ORDINARY_PHONE, "first", "*7447*1#", "", "", "BEGIN");
+        call(ORDINARY_PHONE, "second", "*7447*1#", "", "", "BEGIN");
+        assertTrue(call(ORDINARY_PHONE, "first", "*7447*1#", "", "", "END").contains("closed"));
+        assertTrue(state.containsKey(UssdRouteProbe.key(ORDINARY_PHONE, "second")));
+        verifyNoInteractions(payment, sms, relay);
+    }
+
+    @Test void probeCumulativeInputAndParentWithSuffixAreSupported() throws Exception {
+        enableProbe();
+        gateway.setAliasTestNumbers(Set.of(ORDINARY_PHONE, "08000000001"));
+        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
+        assertEquals(UssdRouteProbe.MENU, call(ORDINARY_PHONE, "split", "*7447#", "1", "", "BEGIN"));
+        assertTrue(call(ORDINARY_PHONE, "split", "*7447#", "1*1", "", "CONTINUE").contains("successful"));
+        assertEquals(UssdRouteProbe.MENU, hml("7447*1", "hml-probe"));
+        assertTrue(hml("7447*1*1", "hml-probe").contains("successful"));
+        verifyNoInteractions(payment, sms, relay);
+    }
+
+    @Test void probeJsonFormAndQueryUseSameResponseFormatter() throws Exception {
+        enableProbe();
+        gateway.setResponseMode(UssdGatewayProperties.ResponseMode.JSON);
+        mvc.perform(post("/ussd").contentType("application/json")
+            .content("{\"msisdn\":\"" + ORDINARY_PHONE + "\",\"session_id\":\"json-probe\",\"shortcode\":\"*7447*1#\"}"))
+            .andExpect(status().isOk()).andExpect(content().contentTypeCompatibleWith("application/json"))
+            .andExpect(jsonPath("$.continue").value(true))
+            .andExpect(jsonPath("$.message").value("TEMS ROUTE ALIAS TEST\n\n1. Continue\n0. Exit"));
+        mvc.perform(post("/ussd").contentType("application/x-www-form-urlencoded")
+            .content("phone=" + ORDINARY_PHONE + "&session_id=json-probe&shortcode=%2A7447%2A1%23&ussd_string=1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.continue").value(false))
+            .andExpect(jsonPath("$.message").value("Route alias session test successful."));
+        gateway.setResponseMode(UssdGatewayProperties.ResponseMode.PLAIN);
+        mvc.perform(get("/ussd").param("phone", ORDINARY_PHONE).param("session_id", "query-probe")
+            .param("service_code", "*7447*1#").header("Accept", "*/*"))
+            .andExpect(status().isOk()).andExpect(content().contentTypeCompatibleWith("text/plain"))
+            .andExpect(content().string(UssdRouteProbe.MENU));
+        verifyNoInteractions(payment, sms, relay);
+    }
+
+    @Test void probeAllowlistAndDefaultOffPreserveExistingRoutes(CapturedOutput output) throws Exception {
+        gateway.setDiagnosticsEnabled(true);
+        assertTrue(call(ORDINARY_PHONE, "off", "*7447*1#", "", "", "BEGIN").contains("CITY BOY MOVEMENT"));
+        enableProbe();
+        gateway.setAliasTestNumbers(Set.of("08000000009"));
+        assertTrue(call(ORDINARY_PHONE, "denied", "*7447*1#", "", "", "BEGIN").contains("CITY BOY MOVEMENT"));
+        assertTrue(output.getAll().contains("allowlist-denied-use-existing-flow"));
+        gateway.setAliasTestNumbers(Set.of(ORDINARY_PHONE));
+        assertTrue(call(ORDINARY_PHONE, "legacy", "*7447*100*1#", "", "", "BEGIN").contains("CITY BOY MOVEMENT"));
+        verify(payment, times(3)).check(eq(ORDINARY_PHONE), anyString());
+    }
+
+    @Test void existingLegacyAndPublicEntryAlreadyConvergeAndRepliesAdvance() throws Exception {
+        String legacy = call(ORDINARY_PHONE, "legacy", "*7447*100*1#", "", "", "BEGIN");
+        String direct = call(ORDINARY_PHONE, "direct", "*7447*1#", "", "", "BEGIN");
+        assertEquals(legacy, direct);
+        assertEquals("CBM", state.get(ORDINARY_PHONE + ":ussdRoute"));
+        assertTrue(call(ORDINARY_PHONE, "direct", "*7447*1#", "2", "", "CONTINUE").contains("ABOUT CITY BOY"));
+    }
+
+    @Test void investigationReproducesSplitTransportMetadataGapInExistingResolver() throws Exception {
+        // The diagnostic parser understands this shape; production routing is deferred until live verification.
+        String response = mvc.perform(post("/ussd").param("phone", ORDINARY_PHONE).param("sessionId", "split-legacy")
+            .param("serviceCode", "*7447*100#").param("ussdString", "1").header("Accept", "text/plain"))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertTemsMenu(response, "current split transport callback");
+    }
+
+    @Test void probeRequiresConfiguredNumberAndNormalizesApprovedInternationalNumber() throws Exception {
+        gateway.setAliasTestEnabled(true);
+        assertTrue(call(ORDINARY_PHONE, "no-config", "*7447*1#", "", "", "BEGIN").contains("CITY BOY MOVEMENT"));
+        gateway.setAliasTestNumbers(Set.of("+234" + ORDINARY_PHONE.substring(1)));
+        assertEquals(UssdRouteProbe.MENU, call(ORDINARY_PHONE, "approved", "*7447*1#", "", "", "BEGIN"));
+    }
+
+    @Test void retransmittedEntryCannotManufactureProbeSuccess() throws Exception {
+        enableProbe();
+        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
+        assertEquals(UssdRouteProbe.MENU, call(ORDINARY_PHONE, "duplicate", "*7447#", "7447*1", "", ""));
+        assertEquals(UssdRouteProbe.MENU, call(ORDINARY_PHONE, "duplicate", "*7447#", "7447*1", "", ""));
+        assertTrue(call(ORDINARY_PHONE, "duplicate", "*7447#", "7447*1*1", "", "").contains("successful"));
+        call(ORDINARY_PHONE, "ambiguous", "*7447#", "1", "", "BEGIN");
+        assertEquals(UssdRouteProbe.MENU, call(ORDINARY_PHONE, "ambiguous", "*7447#", "1", "", ""));
+        assertTrue(call(ORDINARY_PHONE, "ambiguous", "*7447#", "1", "", "CONTINUE").contains("successful"));
+        verifyNoInteractions(payment, sms, relay);
+    }
+
+    @Test void diagnosticsRedactDialogueAndUnrecognizedValues(CapturedOutput output) throws Exception {
+        gateway.setDiagnosticsEnabled(true);
+        call(ORDINARY_PHONE, "session-with-SECRET", "*7447*1#", "", "", "BEGIN");
+        call(ORDINARY_PHONE, "session-with-SECRET", "*7447*1#", "SECRET_PIN", "", "CONTINUE");
+        call(ORDINARY_PHONE, "secret-route", "SECRET_SERVICE", "SECRET_INPUT", "SECRET_TEXT", "");
+        assertFalse(output.getAll().contains("SECRET_PIN"));
+        assertFalse(output.getAll().contains("session-with-SECRET"));
+        assertFalse(output.getAll().contains("SECRET_SERVICE"));
+        assertFalse(output.getAll().contains("SECRET_INPUT"));
+        assertFalse(output.getAll().contains("SECRET_TEXT"));
+        assertFalse(output.getAll().contains(ORDINARY_PHONE));
+        assertTrue(output.getAll().contains("redisStateKeys"));
     }
 }

@@ -13,6 +13,15 @@ public class UssdGatewayProperties {
     private InputMode inputMode = InputMode.SINGLE;
     private ResponseMode responseMode = ResponseMode.LEGACY_ACCEPT;
     private Map<String, UssdInboundRequest.SessionEvent> messageTypes = new HashMap<>();
+    private boolean diagnosticsEnabled;
+    private boolean aliasTestEnabled;
+    private java.util.Set<String> aliasTestNumbers = new java.util.HashSet<>();
+    public boolean isDiagnosticsEnabled() { return diagnosticsEnabled; }
+    public void setDiagnosticsEnabled(boolean value) { diagnosticsEnabled = value; }
+    public boolean isAliasTestEnabled() { return aliasTestEnabled; }
+    public void setAliasTestEnabled(boolean value) { aliasTestEnabled = value; }
+    public java.util.Set<String> getAliasTestNumbers() { return aliasTestNumbers; }
+    public void setAliasTestNumbers(java.util.Set<String> value) { aliasTestNumbers = value; }
     public InputMode getInputMode() { return inputMode; }
     public void setInputMode(InputMode value) { inputMode = value; }
     public ResponseMode getResponseMode() { return responseMode; }

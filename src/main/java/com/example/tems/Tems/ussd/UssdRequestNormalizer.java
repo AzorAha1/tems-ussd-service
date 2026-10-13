@@ -6,7 +6,6 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import static com.example.tems.Tems.ussd.UssdInboundRequest.SessionEvent;
 
 @org.springframework.stereotype.Component
 public final class UssdRequestNormalizer {
@@ -20,13 +19,20 @@ public final class UssdRequestNormalizer {
             if (values != null && values.length > 0) params.put(key, values[0]);
         });
         String event = pick(params, body, "messageType", "message_type");
+        // Preserve the individual routing fields for safe diagnostics; never retain credentials or the body.
+        Map<String, String> rawFields = new HashMap<>();
+        for (String key : java.util.List.of("serviceCode", "service_code", "shortCode", "shortcode",
+                "input", "ussdString", "ussd_string", "message", "text", "messageType", "message_type")) {
+            if (params.get(key) != null) rawFields.put(key, params.get(key));
+            else if (body.containsKey(key)) rawFields.put(key, body.get(key));
+        }
         return new UssdInboundRequest(
             pick(params, body, "phoneNumber", "phone", "msisdn", "mobile", "caller", "subscriber"),
             pick(params, body, "session_id", "sessionId"),
             pick(params, body, "serviceCode", "service_code", "shortCode", "shortcode"),
             pick(params, body, "input", "ussdString", "ussd_string", "message"),
             pick(params, body, "text"), eventMapping.getOrDefault(event, SessionEvent.UNKNOWN),
-            pick(params, body, "telco", "network", "operator"));
+            pick(params, body, "telco", "network", "operator"), rawFields);
     }
 
     private String pick(Map<String, String> params, Map<String, String> body, String... aliases) {

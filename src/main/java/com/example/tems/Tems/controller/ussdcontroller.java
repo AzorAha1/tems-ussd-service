@@ -34,6 +34,9 @@ import com.example.tems.Tems.ussd.UssdInboundRequest;
 import com.example.tems.Tems.ussd.UssdRequestNormalizer;
 import com.example.tems.Tems.ussd.UssdRouteResolver;
 import com.example.tems.Tems.ussd.UssdGatewayProperties;
+import com.example.tems.Tems.ussd.UssdRouteParser;
+import com.example.tems.Tems.ussd.UssdRouteProbe;
+import com.example.tems.Tems.ussd.UssdDiagnosticTrace;
 import com.example.tems.Tems.ussd.UssdInboundRequest.SessionEvent;
 import com.example.tems.Tems.ussd.UssdRouteResolver.Route;
 import org.slf4j.Logger;
@@ -91,6 +94,10 @@ public class ussdcontroller {
     private UssdGatewayProperties gateway = new UssdGatewayProperties();
     @Autowired
     private PaymentGate paymentGate;
+    @Autowired
+    private UssdRouteProbe routeProbe;
+    @Autowired
+    private UssdRouteParser routeParser = new UssdRouteParser();
 
    
 
@@ -313,32 +320,49 @@ public class ussdcontroller {
         String correlation = java.util.UUID.randomUUID().toString();
         boolean plain = gateway.plain(request.getHeader("Accept"));
         String outcome = "error";
+        String response = "END Service temporarily unavailable. Please try again.";
+        UssdDiagnosticTrace diagnostic = new UssdDiagnosticTrace(correlation, request);
         try {
             UssdInboundRequest inbound = requestNormalizer.normalize(request.getParameterMap(), rawBody,
                 request.getContentType(), gateway.getMessageTypes());
+            diagnostic.inbound(inbound);
             USSD_LOG.info("ussd_ingress correlation={} method={} encoding={} phonePresent={} sessionPresent={} servicePresent={} inputPresent={} textPresent={} event={}",
                 correlation, request.getMethod().equals("GET") ? "GET" : "POST",
                 request.getContentType() != null && request.getContentType().contains("json") ? "json" : "parameters",
                 !inbound.phoneNumber().isEmpty(), !inbound.sessionId().isEmpty(), !inbound.serviceCode().isEmpty(),
                 !inbound.userInput().isEmpty(), !inbound.cumulativeText().isEmpty(), inbound.event());
-            String response = dispatchUssd(inbound, correlation);
+            response = dispatchUssd(inbound, correlation, diagnostic);
             outcome = response.startsWith("CON ") ? "continue" : "end";
             return formatUssdResponse(response, plain);
         } catch (IllegalArgumentException ex) {
             outcome = "invalid_request";
-            return formatUssdResponse("END Invalid USSD request.", plain);
+            response = "END Invalid USSD request.";
+            return formatUssdResponse(response, plain);
         } catch (Exception ex) {
             USSD_LOG.error("ussd_failure correlation={} type={}", correlation, ex.getClass().getSimpleName());
-            return formatUssdResponse("END Service temporarily unavailable. Please try again.", plain);
+            return formatUssdResponse(response, plain);
         } finally {
+            diagnostic.emit(USSD_LOG, gateway.isDiagnosticsEnabled(), response, plain, started);
             USSD_LOG.info("ussd_response correlation={} format={} status=200 outcome={} durationMs={}",
                 correlation, plain ? "plain" : "json", outcome, (System.nanoTime() - started) / 1_000_000);
         }
     }
 
-    private String dispatchUssd(UssdInboundRequest inbound, String correlation) {
+    private String dispatchUssd(UssdInboundRequest inbound, String correlation, UssdDiagnosticTrace diagnostic) {
         String phone = normalizePhoneNumber(inbound.phoneNumber());
         if (phone.isEmpty()) return "END Invalid request: missing phone number.";
+        diagnostic.probeAccess(gateway.isAliasTestEnabled(), routeProbe != null && routeProbe.approved(phone));
+        // Isolated transport experiment: no payment, database, SMS or application state reads.
+        if (routeProbe != null) {
+            UssdRouteProbe.Result probe = routeProbe.handle(inbound, phone);
+            if (probe != null) {
+                diagnostic.routing(probe.initial(), routeParser.parse("7447*1"),
+                    Map.of("routeProbe", probe.state().equals("awaiting-choice")));
+                diagnostic.handler("route-alias-test", "approved-test-phone");
+                diagnostic.probe(probe);
+                return probe.response();
+            }
+        }
         String sessionId = inbound.sessionId();
         String storedId = (String) retrieveFromSession(phone, "ussdSessionId");
         String storedRoute = (String) retrieveFromSession(phone, "ussdRoute");
@@ -349,6 +373,17 @@ public class ussdcontroller {
         String typed = inbound.input(gateway.cumulative()).replaceAll("^\\*|#$", "");
         boolean dialString = typed.matches("7447\\*\\d+");
         boolean fresh = inbound.event() == SessionEvent.BEGIN || changedId || !hasState || dialString;
+        diagnostic.sessionDecision(hasState, changedId, dialString);
+        Map<String, Boolean> routingKeys = new java.util.LinkedHashMap<>();
+        if (gateway.isDiagnosticsEnabled()) {
+            for (String key : List.of("menuShown", "ussdSessionId", "ussdRoute", "currentFlow",
+                    "selectedOrgId", "tmfFlow", "cbmFlow", "cbmUssdRelayActive", "currentSubMenu")) {
+                routingKeys.put(key, Boolean.TRUE.equals(redisTemplate.hasKey(phone + ":" + key)));
+            }
+        }
+        diagnostic.routing(fresh, fresh ? routeParser.initialPath(inbound, gateway.cumulative(),
+            inbound.event() == SessionEvent.BEGIN || changedId) : routeParser.parse(inbound.serviceCode()), routingKeys);
+        diagnostic.handler("session-validation", "pending");
         
         if (inbound.event() == SessionEvent.END) {
             if (sessionId.isEmpty() || storedId == null || sessionId.equals(storedId)) resetUserSession(phone);
@@ -359,26 +394,28 @@ public class ussdcontroller {
             // A delayed callback for a different session must not erase the current session.
             if (inbound.event() == SessionEvent.CONTINUE) return "END Session expired. Please dial again.";
             resetUserSession(phone);
-            String dialInput = inbound.input(gateway.cumulative());
-            if (dialInput.matches("[0-9*#]{0,25}")) {
-                USSD_LOG.info("ussd_dial correlation={} service={} input={}",
-                    correlation, inbound.serviceCode(), dialInput);
-            }
             Route route = routeResolver.resolve(inbound, gateway.cumulative(),
                 inbound.event() == SessionEvent.BEGIN || changedId);
             boolean allowed = route != Route.TMF || isTextMeFoodAllowedPhone(phone);
+            diagnostic.handler(allowed ? route.name() : Route.TEMS.name(), allowed ? "allowed" : "allowlist-denied");
             USSD_LOG.info("ussd_route correlation={} event={} route={} access={} fresh=true", correlation,
                 inbound.event(), route, allowed ? "allowed" : "denied");
             if (route == Route.UNKNOWN) return "END Unknown USSD route. Please dial *7447#.";
             if (!(route == Route.TMF && allowed)) {
                 String blocked = paymentGate == null ? null : paymentGate.check(phone, inbound.telco());
-                if (blocked != null) return blocked;
+                if (blocked != null) {
+                    diagnostic.handler("payment-gate", "blocked");
+                    return blocked;
+                }
             }
             saveToSession(phone, "ussdSessionId", sessionId.isEmpty() ? null : sessionId);
             saveToSession(phone, "ussdRoute", allowed ? route.name() : Route.TEMS.name());
             saveToSession(phone, "menuShown", "true");
             saveToSession(phone, "lastInteraction", System.currentTimeMillis());
-            if (!allowed) return HandleLevel1(phone, new String[0], true);
+            if (!allowed) {
+                diagnostic.handler(isCbmSpecialNumber(phone) ? "CBM-root-override" : "TEMS", "allowlist-denied");
+                return HandleLevel1(phone, new String[0], true);
+            }
             if (route == Route.TMF) {
                 saveToSession(phone, "tmfFlow", "main_menu");
                 return showTextMeFoodMainMenu();
@@ -387,12 +424,15 @@ public class ussdcontroller {
                 saveToSession(phone, "cbmFlow", "main_menu");
                 return showCBMMenu();
             }
+            diagnostic.handler(isCbmSpecialNumber(phone) ? "CBM-root-override" : "TEMS", "allowed");
             return HandleLevel1(phone, new String[0], true);
         }
         USSD_LOG.info("ussd_route correlation={} event={} route={} access={} fresh=false", correlation,
             inbound.event(), storedRoute == null ? "LEGACY" : storedRoute,
             "TMF".equals(storedRoute) && !isTextMeFoodAllowedPhone(phone) ? "denied" : "allowed");
         String reply = routeResolver.reply(inbound, gateway.cumulative());
+        diagnostic.handler(storedRoute == null ? "LEGACY" : storedRoute,
+            "TMF".equals(storedRoute) && !isTextMeFoodAllowedPhone(phone) ? "allowlist-denied" : "allowed");
         String response = processUssdDialogue(reply, phone, sessionId.isEmpty() ? null : sessionId, storedRoute);
         if (response.startsWith("END ")) resetUserSession(phone);
         return response;
