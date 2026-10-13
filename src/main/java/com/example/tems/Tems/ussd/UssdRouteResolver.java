@@ -7,6 +7,9 @@ import java.util.Set;
 @org.springframework.stereotype.Component
 public class UssdRouteResolver {
     public enum Route { TEMS, TMF, CBM, UNKNOWN }
+    private final UssdRouteParser parser = new UssdRouteParser();
+    // Application targets only; original service/session metadata is never rewritten.
+    private static final Map<String, Route> PREFIXED_APPLICATION_ROUTES = Map.of("100*10", Route.TMF);
     // private static final Map<String, Route> EXTENSIONS = Map.of("10", Route.TMF, "27", Route.CBM, "1", Route.CBM);
     private static final Map<String, Route> EXTENSIONS =
     Map.of("10", Route.TMF, "27", Route.CBM, "100", Route.TEMS,
@@ -20,6 +23,11 @@ public class UssdRouteResolver {
     private static final Set<String> CBM_AFTER_100 = Set.of("1", "2", "7", "27");
 
     public Route resolve(UssdInboundRequest request, boolean cumulative, boolean startEvidence) {
+        var path = parser.initialPath(request, cumulative, startEvidence);
+        if (path.valid() && path.baseCode().equals("7447") && !path.transportPrefix().isEmpty()) {
+            Route target = PREFIXED_APPLICATION_ROUTES.get(path.transportPrefix() + "*" + path.publicRoute());
+            if (target != null) return target;
+        }
         String service = normalize(request.serviceCode());
         String input = normalize(request.input(cumulative));
         // An explicit extended service code is authoritative over input/text.

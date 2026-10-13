@@ -6,7 +6,7 @@ Fetched `origin/main` before editing. Both HEAD and remote main were `53b03f7ca2
 
 Reviewed recent routing changes `63805a7`, `72a9368`, `4966103`, the subscription/aggregator rewrite `4d7edd2`, payment gate `7f6dcc2`, and current aggregator update `53b03f7`. The October routing commits changed the exact legacy CBM suffix set from `2,20,27` to `1,2,7,27`; the source comment still mentions `20`, although current code intentionally routes it to TEMS. Comments referencing production logs are historical claims, not live records available in this investigation.
 
-**Phase 1/2 implementation is ready for a live experiment. Phase 5/6 activation is withheld until the required two-callback handset test succeeds.** The dedicated parser supports diagnostic classification; the existing production resolver and application flow remain unchanged.
+**Route 1:** Phase 1/2 implementation is ready for a live experiment; Phase 5/6 activation still requires the two-callback handset test. **TMF route 10:** `*7447*100*10#` now routes directly to the existing TMF application, with `*7447*10#` retained as a compatibility alias. TMF does not use the diagnostic menu. See the TMF update below for production limitations.
 
 ## 1. Current behavior
 
@@ -45,12 +45,12 @@ The user reports that `*7447*100*1#` works, and that `*7447*1#` previously reach
 - `AggregatorService` initiates an HML product subscription with `product_id`, normalized phone, telco and `channel=USSD`. It does not send, construct or modify a `serviceCode`, dial string or USSD session ID. The configured product ID is distinct from the route segment `100`.
 - `AggregatorWebhookController` validates product identity and records successful payment, insufficient balance or charging errors in `SubscriptionService`. It does not handle interactive callbacks or rewrite routes.
 - `PaymentGate` can deliberately produce an END before the initial application menu. Repository defaults are payment OFF and subscription initiation disabled; deployed overrides are unknown. Its charge request can take connect/read time plus a polling wait, which must be compared with the gateway's callback deadline if enabled. Its enforcement is unchanged.
-- CBM direct entry is not subject to the TMF test-phone allowlist. TMF denial intentionally falls back to TEMS, and CBM special-phone behavior exists on root-menu entry. The new diagnostic probe has a separate configuration allowlist, with no approved numbers included in source or logs.
+- CBM direct entry is not subject to the TMF test-phone allowlist. TMF denial intentionally falls back to TEMS, and CBM special-phone behavior exists on root-menu entry. The diagnostic probe has a separate configuration allowlist. The user-approved number ending 9119 is its application configuration default; numbers are never printed in diagnostic logs.
 - Nothing here proves whether `100` also identifies an upstream product, charging channel or MNO service. That requires correlated aggregator/MNO session records. Java cannot change that upstream identity by relabeling an inbound field.
 
 Thus the application role of `100` is proven; the claimed aggregator/paywall/network role and the cause of the live failure remain unproven. No charging enforcement has been removed.
 
-The user-requested phone ending **9119** was checked against this revision: it is present in `TMF_TEST_PHONE_NUMBERS`, absent from `CBM_SPECIAL_NUMBERS`. The local `.env` does not configure the new alias-test list or payment test/exemption lists. No list was changed, and deployed lists are unknown.
+The user-requested phone ending **9119** was checked against this revision: it is present in `TMF_TEST_PHONE_NUMBERS`, absent from `CBM_SPECIAL_NUMBERS`. The local `.env` does not configure the new alias-test list or payment test/exemption lists. The later TMF update adds this number as the default alias-test number in application configuration. Deployed environment overrides are unknown.
 
 ## 3. Alias feasibility
 
@@ -74,18 +74,18 @@ Even an initial menu visible on the handset is insufficient evidence of A. Gatew
 | `src/main/java/com/example/tems/Tems/ussd/UssdInboundRequest.java` | Adds immutable selected raw routing fields while retaining existing constructors and safe `toString`; original network service and session identity remain separate |
 | `src/main/java/com/example/tems/Tems/ussd/UssdRequestNormalizer.java` | Preserves individual routing aliases for diagnostics, including blank values; excludes phone fields, credentials, arbitrary headers and full bodies from this metadata map |
 | `src/main/java/com/example/tems/Tems/ussd/UssdGatewayProperties.java` | Adds diagnostics and test switches, both false by default, and a separate configured approved-phone set |
-| `src/main/java/com/example/tems/Tems/ussd/UssdRouteParser.java` | Parses base code, transport prefix, exact public route and remaining segments; classifies full/parent-plus-suffix forms without changing the production resolver |
+| `src/main/java/com/example/tems/Tems/ussd/UssdRouteParser.java` | Parses base code, transport prefix, exact public route and remaining segments; classifies full/parent-plus-suffix forms; also supports the production TMF prefixed-route registry |
 | `src/main/java/com/example/tems/Tems/ussd/UssdRouteProbe.java` | Implements the restricted two-callback test using separate Redis keys derived from phone plus actual network session ID and a three-minute TTL |
 | `src/main/java/com/example/tems/Tems/ussd/UssdDiagnosticTrace.java` | Emits opt-in structured safe evidence: stable hashed session identity, masked phone, routing aliases, method/content/Accept, session classification, key-presence flags, handler/access, status/content type, CON/END and duration |
 | `src/main/java/com/example/tems/Tems/controller/ussdcontroller.java` | Runs the probe before any application/payment dependencies, supplies diagnostic context and formats probe responses through the existing formatter; removes unsafe raw `ussd_dial` logging |
-| `src/main/resources/application.properties` | Defines explicit environment placeholders for the disabled diagnostic/test switches and empty test-number set |
+| `src/main/resources/application.properties` | Defines explicit environment placeholders for the disabled diagnostic/test switches and user-approved default test number, with environment override |
 | `src/test/java/com/example/tems/Tems/ussd/UssdRouteParserTest.java` | Adds requested parsing shapes, exact multi-digit routes, malformed input and metadata/privacy tests |
 | `src/test/java/com/example/tems/Tems/ussd/UssdGatewayPropertiesTest.java` | Verifies disabled defaults and explicit deployment placeholder binding without production services |
 | `src/test/java/com/example/tems/Tems/ussd/UssdControllerTest.java` | Adds two-step probe, callback encodings, session separation, stale state, expiry/restart/exit, access restrictions, privacy, response protocol and legacy-convergence coverage |
 | `USSD_GATEWAY.md` | Links the temporary experiment and documents its configuration boundaries |
 | `USSD_ROUTE_ALIAS_INVESTIGATION.md` | This evidence report and operator procedure |
 
-The existing `UssdRouteResolver`, application menus, downstream services, payment policies, security rules, deployment configuration and `.env` are unchanged. No alias registry is activated pending proof. The parser provides the focused abstraction for a later config/table-backed mapping rather than more organization-specific matchers.
+The `UssdRouteResolver` now registers the prefixed TMF application target `100*10`. Its legacy route `10` continues to select the same TMF handler; the TMF help screen now advertises `*7447*100*10#`. Downstream services, payment policies, access restrictions, security rules, deployment configuration and `.env` remain unchanged. No new route-1 alias registry is activated pending proof. The parser provides the focused abstraction for a later config/table-backed mapping rather than more organization-specific matchers.
 
 ## 5. Tests
 
@@ -173,3 +173,16 @@ After a successful live test, wire the parser into the existing resolver with a 
 - `git diff --check`: passed.
 - Integration Spring context/production services and live handset/network sessions: not tested. A/B/C classification remains pending live proof.
 - Spring property-binding implementation was verified against Spring Boot 3.5 [external configuration documentation](https://docs.spring.io/spring-boot/3.5/reference/features/external-config.html), fetched using the required Context7 CLI.
+
+
+## TMF prefixed-route update — 2026-10-13
+
+At the user's request, TMF's advertised entry is now `*7447*100*10#`. `UssdRouteResolver` uses an exact prefixed application registry (`100*10 -> TMF`) and the existing parser. It handles the full code in service metadata, full input, parent service plus `100*10` suffix, and `serviceCode=*7447*100#` plus initial suffix `10`. The old `*7447*10#` entry remains an application alias to the same handler. Network metadata is preserved, and continuation choices still use the stored TMF flow rather than resolving a route again.
+
+This routing is active without enabling the diagnostic test switch. No new TMF tests or live diagnostic gate were added. The requested verification is a compile/package build with test execution skipped; the earlier 89-test result describes the previous investigation commit, not this TMF update.
+
+The user explicitly requested retaining the current demo implementation. The existing TMF access allowlist, shared demo PIN, fixed beneficiary/voucher balances and simulated redemption therefore remain. This change publishes the TMF entry routing into that existing demo flow; it does not add a real beneficiary, authentication or redemption backend. No live network success or deployment is claimed. The number ending 9119 is now the default approved number for the separate route-alias test via `ussd.gateway.alias-test-numbers`; `USSD_ALIAS_TEST_NUMBERS` can override it. The alias-test switch remains false by default.
+
+Changed files for this update: `UssdRouteResolver.java` (prefixed target), `UssdRouteParser.java` (transport-only suffix), `ussdcontroller.java` (advertised restart code), `application.properties` (approved alias-test number), `USSD_GATEWAY.md` and this report (current behavior and limitations).
+
+Build result for the TMF update: **`mvn clean package -DskipTests` — BUILD SUCCESS**. Test execution was skipped as requested; no live TMF or network test was performed.

@@ -1,6 +1,6 @@
 # USSD gateway integration and verification
 
-For the gated public `*7447*1#` two-callback experiment, configuration and current evidence, see [USSD_ROUTE_ALIAS_INVESTIGATION.md](USSD_ROUTE_ALIAS_INVESTIGATION.md). `USSD_DIAGNOSTICS_ENABLED` and `USSD_ALIAS_TEST_ENABLED` default to false. The test always requires `USSD_ALIAS_TEST_NUMBERS` and a stable network session ID, uses isolated Redis state, and does not activate a production alias. The application's current configured input-mode default is CUMULATIVE; the standalone Java properties object's default remains SINGLE.
+For the gated public `*7447*1#` two-callback experiment, configuration and current evidence, see [USSD_ROUTE_ALIAS_INVESTIGATION.md](USSD_ROUTE_ALIAS_INVESTIGATION.md). `USSD_DIAGNOSTICS_ENABLED` and `USSD_ALIAS_TEST_ENABLED` default to false. The test requires an approved phone (default: the user-approved number ending 9119, overridable with `USSD_ALIAS_TEST_NUMBERS`) and a stable network session ID, uses isolated Redis state, and does not activate a production alias. The application's current configured input-mode default is CUMULATIVE; the standalone Java properties object's default remains SINGLE.
 
 The `/ussd` endpoint supports GET and POST. It does not require a database for the isolated regression suite. Running the complete application still requires its normal runtime services. Nothing in this change provisions an MNO/gateway prefix or deploys the service.
 
@@ -78,3 +78,8 @@ GitHub Actions runs the default isolated suite on pushes and pull requests. Rail
 7. Check explicit BEGIN, changed session IDs, and unknown extensions. Confirm that the handset receives the expected controlled result.
 
 Passing local tests establishes the corrected application behavior. It does not establish gateway delivery, upstream prefix provisioning, a successful live CBM relay, or resolution of the production "system error."
+
+
+## TMF entry through the transport prefix
+
+`*7447*100*10#` is the advertised TMF entry and routes directly to the existing TMF handler, including callbacks split into service `*7447*100#` and initial suffix `10`. `*7447*10#` remains a compatibility alias. Neither entry uses the route-alias diagnostic menu. Existing TMF access and payment policies remain in force. At the user’s request, the current TMF beneficiary/PIN/voucher/redemption demo remains in use; it has not been converted to real financial/benefit operations.

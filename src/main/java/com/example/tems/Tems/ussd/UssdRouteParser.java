@@ -40,6 +40,8 @@ public final class UssdRouteParser {
         }
         // A service with an actual child route is authoritative over dialogue/input fields.
         if (service.valid() && !service.publicRoute().isEmpty()) return service;
+        // Some gateways supply the complete transport suffix without the parent shortcode.
+        if (input.startsWith("100*")) return parse("7447*" + input);
         Path fullInput = parse(input);
         if (fullInput.valid() && fullInput.baseCode().equals("7447")) {
             if (service.valid() && !service.transportPrefix().isEmpty() && fullInput.transportPrefix().isEmpty()
