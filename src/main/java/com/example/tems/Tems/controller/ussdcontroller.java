@@ -92,6 +92,8 @@ public class ussdcontroller {
     private UssdRouteResolver routeResolver = new UssdRouteResolver();
     @Autowired
     private UssdGatewayProperties gateway = new UssdGatewayProperties();
+    @org.springframework.beans.factory.annotation.Value("${ussd.debug.log-request:false}")
+    private boolean debugLogRequest;
     @Autowired
     private PaymentGate paymentGate;
     @Autowired
@@ -332,6 +334,17 @@ public class ussdcontroller {
                 !inbound.phoneNumber().isEmpty(), !inbound.sessionId().isEmpty(), !inbound.serviceCode().isEmpty(),
                 !inbound.userInput().isEmpty(), !inbound.cumulativeText().isEmpty(), inbound.event());
             response = dispatchUssd(inbound, correlation, diagnostic);
+            if (debugLogRequest) {
+                StringBuilder headers = new StringBuilder();
+                java.util.Enumeration<String> names = request.getHeaderNames();
+                while (names != null && names.hasMoreElements()) {
+                    String name = names.nextElement();
+                    if (name.equalsIgnoreCase("authorization") || name.equalsIgnoreCase("cookie")) continue;
+                    headers.append(name).append('=').append(request.getHeader(name)).append("; ");
+                }
+                USSD_LOG.info("ussd_debug_request correlation={} body={} headers={}", correlation,
+                    rawBody == null ? "" : rawBody.replaceAll("\\d{7,}", "***"), headers);
+            }
             outcome = response.startsWith("CON ") ? "continue" : "end";
             return formatUssdResponse(response, plain);
         } catch (IllegalArgumentException ex) {
