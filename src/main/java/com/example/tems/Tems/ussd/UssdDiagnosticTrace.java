@@ -37,14 +37,19 @@ public final class UssdDiagnosticTrace {
         this.initial = initial;
         fields.put("requestKind", initial ? "INITIAL" : "FOLLOW_UP");
         fields.put("baseCode", path.baseCode().equals("7447") ? "7447" : "unknown");
-        fields.put("normalizedPublicRoute", path.valid() && ROUTES.contains(path.publicRoute()) ? path.publicRoute() : "unknown-or-root");
-        fields.put("transportPrefix", path.transportPrefix());
+        fields.put("publicRoute", path.valid() && ROUTES.contains(path.publicRoute()) ? path.publicRoute() : "unknown-or-root");
+        fields.put("transportPrefix", path.transportPrefix().equals("100") ? "100" : "");
         fields.put("redisStateKeys", activeKeys);
     }
 
     public void handler(String handler, String access) {
         fields.put("handler", handler);
         fields.put("access", access);
+    }
+
+    public void canonicalRoute(String canonical) {
+        fields.put("canonicalRoute", canonical != null && UssdRouteResolver.isRegisteredCanonicalRoute(canonical)
+            ? canonical : "unregistered-or-unavailable");
     }
 
     public void sessionDecision(boolean hasState, boolean changedId, boolean dialString) {
