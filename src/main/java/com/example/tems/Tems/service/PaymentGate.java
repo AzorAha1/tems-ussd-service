@@ -79,6 +79,12 @@ public class PaymentGate {
             }
 
             if (subscriptions.hasPending(phone)) {
+                SubscriptionService.Failure earlier = subscriptions.recentFailure(phone);
+                if (earlier == SubscriptionService.Failure.BALANCE || earlier == SubscriptionService.Failure.ERROR) {
+                    subscriptions.clearAttempts(phone); // shown once; the next dial starts a fresh attempt
+                    LOG.info("payment_gate failure_from_earlier_dial reason={} phone={}", earlier, mask(phone));
+                    return earlier == SubscriptionService.Failure.BALANCE ? MSG_AIRTIME : MSG_ERROR;
+                }
                 // A charge is already in flight for this number: never start a second one.
                 LOG.info("payment_gate pending_exists phone={} waiting", mask(phone));
                 return waitForOutcome(phone);
@@ -117,10 +123,12 @@ public class PaymentGate {
             SubscriptionService.Failure failure = subscriptions.recentFailure(phone);
             if (failure == SubscriptionService.Failure.BALANCE) {
                 LOG.info("payment_gate failed reason=balance phone={}", mask(phone));
+                subscriptions.clearAttempts(phone); // shown once
                 return MSG_AIRTIME;
             }
             if (failure == SubscriptionService.Failure.ERROR) {
                 LOG.info("payment_gate failed reason=error phone={}", mask(phone));
+                subscriptions.clearAttempts(phone); // shown once
                 return MSG_ERROR;
             }
             if (System.currentTimeMillis() >= deadline) {
