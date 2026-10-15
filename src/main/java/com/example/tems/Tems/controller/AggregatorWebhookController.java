@@ -1,5 +1,10 @@
 package com.example.tems.Tems.controller;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,7 +12,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.example.tems.Tems.controller.AggregatorWebhookController.AggregatorNotification.Details;
 import com.example.tems.Tems.service.SubscriptionService;
@@ -28,6 +35,21 @@ public class AggregatorWebhookController {
     @Value("${ussd.payment.session-minutes:1440}")
     private int sessionMinutes = 1440;
 
+    /**
+     * Shared secret. When set, every call must carry it as ?key=... or the X-Webhook-Key header, otherwise 401.
+     * Put it in the webhook URL registered with HML. Empty = not enforced (the call is still logged).
+     */
+    @Value("${aggregator.webhook.secret:}")
+    private String webhookSecret = "";
+
+    /**
+     * Comma-separated IP addresses allowed to call the webhook (HML's server). Empty = not enforced.
+     * The source IP is read from X-Real-IP / X-Forwarded-For, which is only trustworthy if the platform's proxy
+     * overwrites them, so use it together with the secret.
+     */
+    @Value("${aggregator.webhook.allowed-ips:}")
+    private String allowedIps = "";
+
     private final SubscriptionService subscriptionService;
 
     @Autowired
@@ -36,7 +58,28 @@ public class AggregatorWebhookController {
     }
 
     @PostMapping("/aggregator")
-    public ResponseEntity<String> handleAggregatorWebhookNotification(@RequestBody AggregatorNotification notification) {
+    public ResponseEntity<String> handleAggregatorWebhookNotification(
+            @RequestBody AggregatorNotification notification,
+            @RequestParam(value = "key", required = false) String keyParam,
+            @RequestHeader(value = "X-Webhook-Key", required = false) String keyHeader,
+            HttpServletRequest request) {
+
+        String providedKey = keyParam != null ? keyParam : keyHeader;
+        String sourceIp = clientIp(request.getHeader("X-Real-IP"), request.getHeader("X-Forwarded-For"), request.getRemoteAddr());
+        // Never log the key itself; the IP is HML's server address, not personal data.
+        LOG.info("aggregator_webhook request key_present={} source_ip={} secret_enforced={} ip_enforced={}",
+            providedKey != null, sourceIp, !webhookSecret.isBlank(), !allowedIps.isBlank());
+
+        Auth auth = authorize(webhookSecret, providedKey, allowedIps, sourceIp);
+        if (auth == Auth.BAD_KEY) {
+            LOG.warn("aggregator_webhook rejected reason=bad_key source_ip={}", sourceIp);
+            return ResponseEntity.status(401).body("Unauthorized");
+        }
+        if (auth == Auth.BAD_IP) {
+            LOG.warn("aggregator_webhook rejected reason=bad_ip source_ip={}", sourceIp);
+            return ResponseEntity.status(403).body("Forbidden");
+        }
+
         if (notification == null || notification.getType() == null
                 || notification.getProduct() == null || notification.getProduct().getIdentity() == null) {
             LOG.warn("aggregator_webhook rejected reason=malformed_payload");
@@ -48,7 +91,6 @@ public class AggregatorWebhookController {
         LOG.info("aggregator_webhook received type={} product={}", type, identity);
 
         if (!isAcceptedIdentity(identity)) {
-            // The identity is not a secret; logging it shows exactly what HML sent.
             LOG.warn("aggregator_webhook rejected reason=unknown_product product={}", identity);
             return ResponseEntity.badRequest().body("Invalid product identity");
         }
@@ -57,7 +99,6 @@ public class AggregatorWebhookController {
         boolean noBalance = "INSUFFICIENT_BALANCE".equals(type);
         boolean chargeError = "CHARGING_ERROR".equals(type);
         if (!success && !noBalance && !chargeError) {
-            // Other notification types (for example the deprecated TELCO_RAW_SYNC) carry no phone number; acknowledge them.
             LOG.info("aggregator_webhook ignored type={}", type);
             return ResponseEntity.ok("Webhook notification received successfully");
         }
@@ -74,19 +115,43 @@ public class AggregatorWebhookController {
             subscriptionService.activateSession(cleanNumber, sessionMinutes);
             LOG.info("aggregator_webhook activated type={} phone={} minutes={}", type, maskPhone(cleanNumber), sessionMinutes);
         } else {
-            // Recorded so a dial that is waiting for this payment can tell the user what happened.
             subscriptionService.markFailed(cleanNumber, noBalance);
             LOG.info("aggregator_webhook charge_failed type={} phone={}", type, maskPhone(cleanNumber));
         }
         return ResponseEntity.ok("Webhook notification received successfully");
     }
 
-    private boolean isAcceptedIdentity(String identity) {
-        if (acceptedIdentities == null) return false;
-        for (String accepted : acceptedIdentities.split(",")) {
-            if (accepted.trim().equals(identity)) return true;
+    // ---- authentication helpers (package-private static so they are easy to unit test) ----
+
+    enum Auth { OK, BAD_KEY, BAD_IP }
+
+    static Auth authorize(String secret, String providedKey, String allowedIps, String sourceIp) {
+        if (secret != null && !secret.isBlank() && !sameSecret(secret, providedKey)) return Auth.BAD_KEY;
+        if (allowedIps != null && !allowedIps.isBlank() && !csvContains(allowedIps, sourceIp)) return Auth.BAD_IP;
+        return Auth.OK;
+    }
+
+    static boolean sameSecret(String expected, String provided) {
+        if (expected == null || provided == null) return false;
+        return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), provided.getBytes(StandardCharsets.UTF_8));
+    }
+
+    static String clientIp(String realIp, String forwardedFor, String remoteAddr) {
+        if (realIp != null && !realIp.isBlank()) return realIp.trim();
+        if (forwardedFor != null && !forwardedFor.isBlank()) return forwardedFor.split(",")[0].trim();
+        return remoteAddr == null ? "" : remoteAddr;
+    }
+
+    static boolean csvContains(String csv, String value) {
+        if (csv == null || value == null) return false;
+        for (String entry : csv.split(",")) {
+            if (entry.trim().equals(value.trim())) return true;
         }
         return false;
+    }
+
+    private boolean isAcceptedIdentity(String identity) {
+        return csvContains(acceptedIdentities, identity);
     }
 
     private String normalizePhoneNumber(String phoneNumber) {

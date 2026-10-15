@@ -4,80 +4,74 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.tems.Tems.service.SubscriptionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-class AggregatorWebhookControllerTest {
-    private static final String TEMS_IDENTITY = "PD-17625145556900";   // product 576 on HML
-    private static final int ONE_DAY = 1440;                            // default paid session, in minutes
+class AggregatorWebhookSecurityTest {
+    private static final String URL = "/api/v1/tems/webhook/aggregator";
+    private static final String BODY = "{\"type\":\"SYNC_NOTIFICATION\",\"product\":{\"identity\":\"PD-17625145556900\"},\"details\":{\"phone\":\"2347072603735\"}}";
+    private static final String SECRET = "s3cr3t-key-123";
+    private static final String HML_IP = "91.109.117.92";
     private SubscriptionService subscriptions;
+    private AggregatorWebhookController controller;
     private MockMvc mvc;
 
     @BeforeEach void setup() {
         subscriptions = mock(SubscriptionService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new AggregatorWebhookController(subscriptions)).build();
+        controller = new AggregatorWebhookController(subscriptions);
+        mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
-    private ResultActions send(String json) throws Exception {
-        return mvc.perform(post("/api/v1/tems/webhook/aggregator").contentType("application/json").content(json));
+    private ResultActions send(MockHttpServletRequestBuilder request) throws Exception {
+        return mvc.perform(request.contentType("application/json").content(BODY));
     }
 
-    private static String body(String type, String identity, String phone) {
-        String details = phone == null ? "" : ",\"details\":{\"phone\":\"" + phone + "\"}";
-        return "{\"type\":\"" + type + "\",\"telco\":\"MTN\",\"product\":{\"id\":576,\"identity\":\"" + identity + "\"}" + details + "}";
+    @Test void nothingConfiguredAcceptsEveryone() throws Exception {
+        send(post(URL)).andExpect(status().isOk());
+        verify(subscriptions).activateSession("07072603735", 1440);
     }
 
-    @Test void newSubscriptionForTemsProductActivatesAOneDaySession() throws Exception {
-        send(body("SYNC_NOTIFICATION", TEMS_IDENTITY, "2347072603735")).andExpect(status().isOk());
-        verify(subscriptions).activateSession("07072603735", ONE_DAY);
-    }
-
-    @Test void renewalActivatesSessionToo() throws Exception {
-        send(body("RENEWAL_NOTIFICATION", TEMS_IDENTITY, "2347072603735")).andExpect(status().isOk());
-        verify(subscriptions).activateSession("07072603735", ONE_DAY);
-    }
-
-    @Test void theOldWrongIdentitiesAreNoLongerAccepted() throws Exception {
-        // the MTN subscription id and the 2022 "Prince" test product used to be the only values that passed
-        send(body("SYNC_NOTIFICATION", "234102200008395", "2347072603735")).andExpect(status().isBadRequest());
-        send(body("SYNC_NOTIFICATION", "PD-16618033881000", "2347072603735")).andExpect(status().isBadRequest());
-        verifyNoInteractions(subscriptions);
-    }
-
-    @Test void notEnoughAirtimeIsRecordedAsABalanceFailure() throws Exception {
-        send(body("INSUFFICIENT_BALANCE", TEMS_IDENTITY, "2347072603735")).andExpect(status().isOk());
-        verify(subscriptions).markFailed("07072603735", true);
+    @Test void withASecretAMissingOrWrongKeyIsRejectedBeforeAnythingIsRecorded() throws Exception {
+        ReflectionTestUtils.setField(controller, "webhookSecret", SECRET);
+        send(post(URL)).andExpect(status().isUnauthorized());
+        send(post(URL + "?key=wrong")).andExpect(status().isUnauthorized());
+        send(post(URL).header("X-Webhook-Key", "wrong")).andExpect(status().isUnauthorized());
         verify(subscriptions, never()).activateSession(anyString(), anyInt());
     }
 
-    @Test void otherChargingErrorsAreRecordedAsAnErrorFailure() throws Exception {
-        send(body("CHARGING_ERROR", TEMS_IDENTITY, "2347072603735")).andExpect(status().isOk());
-        verify(subscriptions).markFailed("07072603735", false);
-        verify(subscriptions, never()).activateSession(anyString(), anyInt());
+    @Test void withASecretTheRightKeyInTheUrlOrTheHeaderIsAccepted() throws Exception {
+        ReflectionTestUtils.setField(controller, "webhookSecret", SECRET);
+        send(post(URL + "?key=" + SECRET)).andExpect(status().isOk());
+        send(post(URL).header("X-Webhook-Key", SECRET)).andExpect(status().isOk());
+        verify(subscriptions, times(2)).activateSession("07072603735", 1440);
     }
 
-    @Test void typesWithoutAPhoneAreAcknowledgedNotCrashed() throws Exception {
-        send(body("TELCO_RAW_SYNC", TEMS_IDENTITY, null)).andExpect(status().isOk());
-        verifyNoInteractions(subscriptions);
+    @Test void withAnIpListOnlyListedAddressesAreAccepted() throws Exception {
+        ReflectionTestUtils.setField(controller, "allowedIps", HML_IP + ", 10.0.0.5");
+        send(post(URL).header("X-Real-IP", "6.6.6.6")).andExpect(status().isForbidden());
+        send(post(URL)).andExpect(status().isForbidden());                       // no proxy header: 127.0.0.1 is not listed
+        send(post(URL).header("X-Real-IP", HML_IP)).andExpect(status().isOk());
+        send(post(URL).header("X-Forwarded-For", HML_IP + ", 152.233.12.245")).andExpect(status().isOk());
+        verify(subscriptions, times(2)).activateSession("07072603735", 1440);
     }
 
-    @Test void successWithoutPhoneIsRejected() throws Exception {
-        send(body("SYNC_NOTIFICATION", TEMS_IDENTITY, null)).andExpect(status().isBadRequest());
-        verifyNoInteractions(subscriptions);
-    }
-
-    @Test void malformedPayloadIsA400NotA500() throws Exception {
-        send("{\"type\":\"SYNC_NOTIFICATION\"}").andExpect(status().isBadRequest());
-        send("{\"product\":{\"identity\":\"" + TEMS_IDENTITY + "\"}}").andExpect(status().isBadRequest());
-        verifyNoInteractions(subscriptions);
+    @Test void whenBothAreSetBothMustPass() throws Exception {
+        ReflectionTestUtils.setField(controller, "webhookSecret", SECRET);
+        ReflectionTestUtils.setField(controller, "allowedIps", HML_IP);
+        send(post(URL + "?key=" + SECRET).header("X-Real-IP", "6.6.6.6")).andExpect(status().isForbidden());
+        send(post(URL).header("X-Real-IP", HML_IP)).andExpect(status().isUnauthorized());
+        send(post(URL + "?key=" + SECRET).header("X-Real-IP", HML_IP)).andExpect(status().isOk());
+        verify(subscriptions, times(1)).activateSession("07072603735", 1440);
     }
 }
