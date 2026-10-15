@@ -27,11 +27,11 @@ public class PaymentGate {
     private static final Logger LOG = LoggerFactory.getLogger(PaymentGate.class);
 
     public enum Mode { OFF, SHADOW, ALLOWLIST, ON }
+    static final String MSG_PENDING = "END A N12 payment request is waiting on your phone. Please accept it within 2 minutes, then dial again.";
 
     static final String MSG_AIRTIME = "END Not enough airtime to process your payment. Please recharge and dial again.";
     static final String MSG_ERROR = "END We could not process your payment. Please try again later.";
     static final String MSG_START_FAILED = "END We could not start your payment. Please try again later.";
-    static final String MSG_PENDING = "END Your payment is being processed. Please dial again in a minute.";
     static final String MSG_UNAVAILABLE = "END Service temporarily unavailable. Please try again.";
 
     private static final long POLL_MS = 400;
