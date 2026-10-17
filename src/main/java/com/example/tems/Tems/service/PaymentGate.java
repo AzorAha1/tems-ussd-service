@@ -12,13 +12,16 @@ import org.springframework.stereotype.Service;
  * check() returns null to let the caller in, or an "END ..." message to show instead of the menu.
  * Unpaid callers never see the menu.
  *
- * Flow for an unpaid caller:
- *   1. record a "pending" attempt, ask HML to start the charge (Initiate Subscription)
- *   2. wait a few seconds for HML's notification (it arrives at the webhook and writes to the database)
- *        paid                -> return null (the menu opens in the same dial)
- *        not enough airtime  -> "Not enough airtime to process your payment..."
- *        other charge error  -> generic payment error
- *        nothing yet         -> "Your payment is being processed. Please dial again in a minute."
+ * What happens for an unpaid caller:
+ *   1. We record a "pending" attempt and ask HML to start the charge (Initiate Subscription).
+ *   2. The dial ends at once with "a payment request was sent by SMS". MTN sends the user an SMS; the user replies 1.
+ *   3. HML tells our webhook the payment succeeded (or failed). The webhook writes it to the database and sends a
+ *      confirmation SMS.
+ *   4. The user's next dial finds the payment and opens the menu. If the payment failed (for example not enough airtime),
+ *      that dial shows the reason once, and the dial after it starts a fresh attempt.
+ *
+ * ussd.payment.wait-ms (default 0) is an optional short pause that lets a very fast answer open the menu in the same
+ * dial. A person has to reply to the SMS first, so it normally helps nobody; leave it at 0.
  *
  * Rollout switch (ussd.payment.mode): OFF (default) | SHADOW (log only) | ALLOWLIST (only ussd.payment.test-numbers) | ON.
  */
@@ -27,26 +30,27 @@ public class PaymentGate {
     private static final Logger LOG = LoggerFactory.getLogger(PaymentGate.class);
 
     public enum Mode { OFF, SHADOW, ALLOWLIST, ON }
-    static final String MSG_PENDING = "END A N12 payment request is waiting on your phone. Please accept it within 2 minutes, then dial again.";
 
-    static final String MSG_AIRTIME = "END Not enough airtime to process your payment. Please recharge and dial again.";
-    static final String MSG_ERROR = "END We could not process your payment. Please try again later.";
-    static final String MSG_START_FAILED = "END We could not start your payment. Please try again later.";
+    static final String MSG_PENDING = "END A N12 payment request was sent by SMS. Reply 1 to accept it, then wait for our confirmation SMS before you dial *7447# again.";
+    static final String MSG_AIRTIME = "END You do not have enough airtime for the N12 payment. Please recharge and dial *7447# again.";
+    static final String MSG_ERROR = "END We could not complete your N12 payment. Please try again in a few minutes.";
+    static final String MSG_START_FAILED = "END We could not send your N12 payment request. Please try again in a few minutes.";
+    static final String MSG_UNKNOWN = "END Your N12 payment request may be delayed. If an SMS arrives, reply 1 to accept it. If not, dial *7447# again in a few minutes.";
     static final String MSG_UNAVAILABLE = "END Service temporarily unavailable. Please try again.";
 
     private static final long POLL_MS = 400;
 
     @Value("${ussd.payment.mode:OFF}")
     private String mode = "OFF";
-    /** Comma-separated national numbers (07012345678). Only these are charged in ALLOWLIST mode. */
+    /** Comma-separated national numbers, no quotes (07012345678,08012345678). Only these are charged in ALLOWLIST mode. */
     @Value("${ussd.payment.test-numbers:}")
     private String testNumbers = "";
     /** Comma-separated national numbers that never pay (staff, partners). Empty by default. */
     @Value("${ussd.payment.exempt-numbers:}")
     private String exemptNumbers = "";
-    /** How long a dial waits for HML's notification before telling the user to dial again. */
-    @Value("${ussd.payment.wait-ms:6000}")
-    private long waitMs = 6000;
+    /** Optional pause for a very fast answer. 0 = answer at once. */
+    @Value("${ussd.payment.wait-ms:0}")
+    private long waitMs = 0;
     /** How long a "pending" attempt blocks a second Initiate for the same number. */
     @Value("${ussd.payment.pending-minutes:5}")
     private int pendingMinutes = 5;
@@ -78,19 +82,22 @@ public class PaymentGate {
                 return null;
             }
 
+            // A failure that arrived since the last dial is shown once, before anything else. This must come BEFORE the
+            // pending check: when a charge fails the webhook ends the pending record, so "pending" is already false.
+            SubscriptionService.Failure earlier = subscriptions.recentFailure(phone);
+            if (earlier == SubscriptionService.Failure.BALANCE || earlier == SubscriptionService.Failure.ERROR) {
+                subscriptions.clearAttempts(phone); // shown once; the next dial starts a fresh attempt
+                LOG.info("payment_gate failure_from_earlier_dial reason={} phone={}", earlier, mask(phone));
+                return earlier == SubscriptionService.Failure.BALANCE ? MSG_AIRTIME : MSG_ERROR;
+            }
+
             if (subscriptions.hasPending(phone)) {
-                SubscriptionService.Failure earlier = subscriptions.recentFailure(phone);
-                if (earlier == SubscriptionService.Failure.BALANCE || earlier == SubscriptionService.Failure.ERROR) {
-                    subscriptions.clearAttempts(phone); // shown once; the next dial starts a fresh attempt
-                    LOG.info("payment_gate failure_from_earlier_dial reason={} phone={}", earlier, mask(phone));
-                    return earlier == SubscriptionService.Failure.BALANCE ? MSG_AIRTIME : MSG_ERROR;
-                }
                 // A charge is already in flight for this number: never start a second one.
-                LOG.info("payment_gate pending_exists phone={} waiting", mask(phone));
+                LOG.info("payment_gate pending_exists phone={}", mask(phone));
                 return waitForOutcome(phone);
             }
 
-            subscriptions.clearAttempts(phone);            // forget an earlier failure before trying again
+            subscriptions.clearAttempts(phone);               // forget stale attempts before trying again
             subscriptions.markPending(phone, pendingMinutes); // before Initiate, so a fast notification finds it
             AggregatorService.InitiateResult result = aggregator.initiate(phone, telco);
 
@@ -99,6 +106,13 @@ public class PaymentGate {
                 subscriptions.clearAttempts(phone);
                 LOG.warn("payment_gate initiate_skipped phone={} letting_user_in", mask(phone));
                 return null;
+            }
+            // Written by name so this file compiles with an AggregatorService that does not have UNKNOWN yet.
+            // UNKNOWN = the request was sent but no answer came back (timeout), so HML may have processed it: keep the
+            // pending attempt (no second request right away) and tell the user what to look for.
+            if ("UNKNOWN".equals(String.valueOf(result))) {
+                LOG.warn("payment_gate initiate_unknown phone={} keeping_pending", mask(phone));
+                return MSG_UNKNOWN;
             }
             if (result == AggregatorService.InitiateResult.FAILED) {
                 subscriptions.clearAttempts(phone);
