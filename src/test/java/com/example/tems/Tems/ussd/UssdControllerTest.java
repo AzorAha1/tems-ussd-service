@@ -18,9 +18,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -155,6 +158,10 @@ class UssdControllerTest {
         state.clear();
         hml("", null);
         assertTrue(hml("7447*1", null).contains("CITY BOY MOVEMENT"));
+    }
+    @Test void hmlElevenAliasOpensCbm() throws Exception {
+        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
+        assertTrue(hml("7447*11", "e1").contains("CITY BOY MOVEMENT"));
     }
     @Test void hmlDialAfter100GoesToCbmAndOtherSuffixesStayOnTems() throws Exception {
         gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
