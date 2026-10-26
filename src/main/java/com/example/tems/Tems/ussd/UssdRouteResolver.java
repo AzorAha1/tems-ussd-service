@@ -7,7 +7,11 @@ import java.util.Map;
 public class UssdRouteResolver {
     public enum Route { TEMS, TMF, CBM, UNKNOWN }
     private final UssdRouteParser parser = new UssdRouteParser();
-    private static final Map<String, String> ROUTE_ALIASES = Map.of("10", "100*10", "11", "100*1");
+     private static final Map<String, String> ROUTE_ALIASES = Map.of(
+        "10", "100*10",
+        "11", "100",
+        "11*1", "100*1", "11*2", "100*2", "11*7", "100*7", "11*27", "100*27",
+        "11*10", "100*10");
     private static final Map<String, Route> CANONICAL_ROUTES = Map.ofEntries(
         Map.entry("7447", Route.TEMS), Map.entry("100", Route.TEMS),
         Map.entry("100*10", Route.TMF),

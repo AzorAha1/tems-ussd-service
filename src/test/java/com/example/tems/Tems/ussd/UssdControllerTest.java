@@ -163,6 +163,14 @@ class UssdControllerTest {
         gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
         assertTrue(hml("7447*11", "e1").contains("CITY BOY MOVEMENT"));
     }
+    @Test void hmlElevenPrefixWorksLikeOneHundred() throws Exception {
+        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
+        assertTrue(hml("7447*11", "p0").contains("Welcome to TEMS"));
+        assertTrue(hml("7447*11*1", "p1").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("7447*11*2", "p2").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("7447*11*7", "p3").contains("CITY BOY MOVEMENT"));
+        assertTrue(hml("7447*11*27", "p4").contains("CITY BOY MOVEMENT"));
+    }
     @Test void hmlDialAfter100GoesToCbmAndOtherSuffixesStayOnTems() throws Exception {
         gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
         for (String suffix : CBM_SUFFIXES) {
