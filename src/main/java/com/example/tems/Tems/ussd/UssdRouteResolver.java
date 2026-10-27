@@ -6,19 +6,18 @@ import java.util.Map;
 @org.springframework.stereotype.Component
 public class UssdRouteResolver {
     public enum Route { TEMS, TMF, CBM, UNKNOWN }
+    /** What MTN puts after 7447* (currently 11). Defined once, in the parser. */
+    private static final String P = UssdRouteParser.TRANSPORT_PREFIX;
     private final UssdRouteParser parser = new UssdRouteParser();
-     private static final Map<String, String> ROUTE_ALIASES = Map.of(
-        "10", "100*10",
-        "11", "100",
-        "11*1", "100*1", "11*2", "100*2", "11*7", "100*7", "11*27", "100*27",
-        "11*10", "100*10");
+    /** A bare route that arrives without the prefix is treated as if it carried it. */
+    private static final Map<String, String> ROUTE_ALIASES = Map.of("10", P + "*10");
     private static final Map<String, Route> CANONICAL_ROUTES = Map.ofEntries(
-        Map.entry("7447", Route.TEMS), Map.entry("100", Route.TEMS),
-        Map.entry("100*10", Route.TMF),
+        Map.entry("7447", Route.TEMS), Map.entry(P, Route.TEMS),
+        Map.entry(P + "*10", Route.TMF),
         Map.entry("1", Route.CBM), Map.entry("2", Route.CBM), Map.entry("3", Route.CBM),
         Map.entry("4", Route.CBM), Map.entry("5", Route.CBM), Map.entry("27", Route.CBM),
-        Map.entry("100*1", Route.CBM), Map.entry("100*2", Route.CBM),
-        Map.entry("100*7", Route.CBM), Map.entry("100*27", Route.CBM));
+        Map.entry(P + "*1", Route.CBM), Map.entry(P + "*2", Route.CBM),
+        Map.entry(P + "*7", Route.CBM), Map.entry(P + "*27", Route.CBM));
 
     public record Resolution(UssdRouteParser.Path path, String canonicalRoute, Route target) {
         @Override public String toString() { return "UssdResolution[target=" + target + "]"; }
@@ -28,9 +27,9 @@ public class UssdRouteResolver {
         var path = parser.initialPath(request, cumulative, startEvidence);
         String canonical = canonicalize(path);
         Route target = CANONICAL_ROUTES.get(canonical);
-        // Preserve the established TEMS fallback for unregistered numeric suffixes after 100.
+        // Preserve the established TEMS fallback for unregistered numeric suffixes after the prefix.
         if (target == null) target = path.valid() && path.baseCode().equals("7447")
-            && path.transportPrefix().equals("100") ? Route.TEMS : Route.UNKNOWN;
+            && path.transportPrefix().equals(P) ? Route.TEMS : Route.UNKNOWN;
         return new Resolution(path, canonical, target);
     }
 

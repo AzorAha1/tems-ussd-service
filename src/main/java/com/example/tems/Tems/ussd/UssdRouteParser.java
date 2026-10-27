@@ -7,6 +7,9 @@ import org.springframework.stereotype.Component;
 /** Parses entry metadata only. It never changes the incoming network identity. */
 @Component
 public final class UssdRouteParser {
+    /** What MTN puts after the parent code: *7447*11*N# reaches us as 7447*11*N. The only place this value lives. */
+    public static final String TRANSPORT_PREFIX = "11";
+
     public record Path(boolean valid, String baseCode, String transportPrefix,
                        String publicRoute, List<String> remainingSegments) {
         static Path invalid() { return new Path(false, "", "", "", List.of()); }
@@ -23,8 +26,8 @@ public final class UssdRouteParser {
         List<String> segments = Arrays.asList(value.split("\\*"));
         int index = 1;
         String prefix = "";
-        if (segments.size() > index && segments.get(index).equals("100")) {
-            prefix = "100";
+        if (segments.size() > index && segments.get(index).equals(TRANSPORT_PREFIX)) {
+            prefix = TRANSPORT_PREFIX;
             index++;
         }
         String route = segments.size() > index ? segments.get(index++) : "";
@@ -41,7 +44,7 @@ public final class UssdRouteParser {
         // A service with an actual child route is authoritative over dialogue/input fields.
         if (service.valid() && !service.publicRoute().isEmpty()) return service;
         // Some gateways supply the complete transport suffix without the parent shortcode.
-        if (input.startsWith("100*")) return parse("7447*" + input);
+        if (input.startsWith(TRANSPORT_PREFIX + "*")) return parse("7447*" + input);
         Path fullInput = parse(input);
         if (fullInput.valid() && fullInput.baseCode().equals("7447")) {
             if (service.valid() && !service.transportPrefix().isEmpty() && fullInput.transportPrefix().isEmpty()

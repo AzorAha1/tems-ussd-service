@@ -12,7 +12,7 @@ class UssdRouteParserTest {
 
     @ParameterizedTest
     @CsvSource(value = {"*7447#|''|''", "*7447*1#|''|1", "*7447*10#|''|10", "*7447*222#|''|222",
-        "*7447*1001#|''|1001", "*7447*100*1#|100|1", "7447*100*1|100|1"}, delimiter = '|')
+        "*7447*1001#|''|1001", "*7447*11*1#|11|1", "7447*11*1|11|1"}, delimiter = '|')
     void parsesExactSegments(String code, String prefix, String route) {
         var path = parser.parse(code);
         assertTrue(path.valid());
@@ -23,8 +23,8 @@ class UssdRouteParserTest {
     }
 
     @ParameterizedTest
-    @CsvSource(value = {"*7447#|''|''|''", "*7447*1#|''|''|1", "*7447*100*1#|''|100|1",
-        "*7447#|1|''|1", "*7447*100#|1|100|1"}, delimiter = '|')
+    @CsvSource(value = {"*7447#|''|''|''", "*7447*1#|''|''|1", "*7447*11*1#|''|11|1",
+        "*7447#|1|''|1", "*7447*11#|1|11|1"}, delimiter = '|')
     void classifiesCallbackRepresentations(String code, String input, String prefix, String route) {
         var inbound = normalizer.normalize(Map.of("serviceCode", new String[]{code},
             "ussdString", new String[]{input}, "sessionId", new String[]{"test-session"}), null, null, Map.of());

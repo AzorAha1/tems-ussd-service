@@ -13,7 +13,7 @@ import org.slf4j.Logger;
 /** Request-scoped safe evidence. Arbitrary dialogue, headers and Redis values are never logged. */
 public final class UssdDiagnosticTrace {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final Set<String> ROUTES = Set.of("1", "2", "3", "4", "5", "7", "10", "27", "100", "222", "1001");
+    private static final Set<String> ROUTES = Set.of("1", "2", "3", "4", "5", "7", "10", "11", "27", "222", "1001");
     private final Map<String, Object> fields = new LinkedHashMap<>();
     private UssdInboundRequest inbound;
     private boolean initial;
@@ -38,7 +38,7 @@ public final class UssdDiagnosticTrace {
         fields.put("requestKind", initial ? "INITIAL" : "FOLLOW_UP");
         fields.put("baseCode", path.baseCode().equals("7447") ? "7447" : "unknown");
         fields.put("publicRoute", path.valid() && ROUTES.contains(path.publicRoute()) ? path.publicRoute() : "unknown-or-root");
-        fields.put("transportPrefix", path.transportPrefix().equals("100") ? "100" : "");
+        fields.put("transportPrefix", path.transportPrefix().equals(UssdRouteParser.TRANSPORT_PREFIX) ? UssdRouteParser.TRANSPORT_PREFIX : "");
         fields.put("redisStateKeys", activeKeys);
     }
 

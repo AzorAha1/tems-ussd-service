@@ -14,13 +14,13 @@ class UssdRoutingTest {
     private final UssdRouteResolver resolver = new UssdRouteResolver();
 
     @ParameterizedTest
-    @CsvSource({"*7447*10#,''", "*7447*100*10#,''", "*7447*100#,10",
-        "*7447#,100*10", "*7447#,7447*100*10", "744710,''"})
+    @CsvSource({"*7447*10#,''", "*7447*11*10#,''", "*7447*11#,10",
+        "*7447#,11*10", "*7447#,7447*11*10", "744710,''"})
     void tmfEntriesCanonicalizeBeforeHandlerSelectionWithoutChangingNetworkMetadata(String service, String input) {
         var request = new UssdInboundRequest("", "session", service, input, "", BEGIN);
         var resolution = resolver.resolveEntry(request, true, true);
         assertEquals("10", resolution.path().publicRoute());
-        assertEquals("100*10", resolution.canonicalRoute());
+        assertEquals("11*10", resolution.canonicalRoute());
         assertEquals(TMF, resolution.target());
         assertEquals(service, request.serviceCode());
         assertEquals(input, request.userInput());
@@ -28,12 +28,12 @@ class UssdRoutingTest {
 
     @Test void canonicalizationIsIdempotentAndPreservesOriginalTransportPrefix() {
         var shortPath = new UssdRouteParser().parse("*7447*10#");
-        var legacyPath = new UssdRouteParser().parse("*7447*100*10#");
+        var legacyPath = new UssdRouteParser().parse("*7447*11*10#");
         assertEquals("", shortPath.transportPrefix());
-        assertEquals("100", legacyPath.transportPrefix());
-        assertEquals("100*10", resolver.canonicalize(shortPath));
+        assertEquals("11", legacyPath.transportPrefix());
+        assertEquals("11*10", resolver.canonicalize(shortPath));
         assertEquals(resolver.canonicalize(shortPath), resolver.canonicalize(legacyPath));
-        assertEquals("100*10", resolver.canonicalize(new UssdRouteParser().parse("7447*100*10")));
+        assertEquals("11*10", resolver.canonicalize(new UssdRouteParser().parse("7447*11*10")));
     }
 
     @ParameterizedTest

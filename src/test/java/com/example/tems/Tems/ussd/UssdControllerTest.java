@@ -171,17 +171,17 @@ class UssdControllerTest {
         assertTrue(hml("7447*11*7", "p3").contains("CITY BOY MOVEMENT"));
         assertTrue(hml("7447*11*27", "p4").contains("CITY BOY MOVEMENT"));
     }
-    @Test void hmlDialAfter100GoesToCbmAndOtherSuffixesStayOnTems() throws Exception {
+    @Test void hmlDialAfter11GoesToCbmAndOtherSuffixesStayOnTems() throws Exception {
         gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
         for (String suffix : CBM_SUFFIXES) {
-            assertTrue(hml("7447*100*" + suffix, "c" + suffix).contains("CITY BOY MOVEMENT"),
+            assertTrue(hml("7447*11*" + suffix, "c" + suffix).contains("CITY BOY MOVEMENT"),
                 "suffix " + suffix + " should open CBM");
             assertTrue(hml("2", "c" + suffix).contains("ABOUT CITY BOY"));
         }
         for (String suffix : TEMS_SUFFIXES) {
-            assertTemsMenu(hml("7447*100*" + suffix, "t" + suffix), "suffix " + suffix);
+            assertTemsMenu(hml("7447*11*" + suffix, "t" + suffix), "suffix " + suffix);
         }
-        assertTemsMenu(hml("7447*100", "plain"), "plain dial");
+        assertTemsMenu(hml("7447*11", "plain"), "plain dial");
         verifyNoInteractions(relay);
     }
 
@@ -370,12 +370,12 @@ class UssdControllerTest {
         assertTrue(call(ORDINARY_PHONE, "denied", "*7447*1#", "", "", "BEGIN").contains("CITY BOY MOVEMENT"));
         assertTrue(output.getAll().contains("allowlist-denied-use-existing-flow"));
         gateway.setAliasTestNumbers(Set.of(ORDINARY_PHONE));
-        assertTrue(call(ORDINARY_PHONE, "legacy", "*7447*100*1#", "", "", "BEGIN").contains("CITY BOY MOVEMENT"));
+        assertTrue(call(ORDINARY_PHONE, "legacy", "*7447*11*1#", "", "", "BEGIN").contains("CITY BOY MOVEMENT"));
         verify(payment, times(3)).check(eq(ORDINARY_PHONE), anyString());
     }
 
     @Test void existingLegacyAndPublicEntryAlreadyConvergeAndRepliesAdvance() throws Exception {
-        String legacy = call(ORDINARY_PHONE, "legacy", "*7447*100*1#", "", "", "BEGIN");
+        String legacy = call(ORDINARY_PHONE, "legacy", "*7447*11*1#", "", "", "BEGIN");
         String direct = call(ORDINARY_PHONE, "direct", "*7447*1#", "", "", "BEGIN");
         assertEquals(legacy, direct);
         assertEquals("CBM", state.get(ORDINARY_PHONE + ":ussdRoute"));
@@ -384,32 +384,32 @@ class UssdControllerTest {
 
     @Test void splitTransportMetadataUsesTheSameParsedCbmCanonicalTarget() throws Exception {
         String response = mvc.perform(post("/ussd").param("phone", ORDINARY_PHONE).param("sessionId", "split-legacy")
-            .param("serviceCode", "*7447*100#").param("ussdString", "1").header("Accept", "text/plain"))
+            .param("serviceCode", "*7447*11#").param("ussdString", "1").header("Accept", "text/plain"))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertTrue(response.contains("CITY BOY MOVEMENT"));
-        assertEquals("100*1", state.get(ORDINARY_PHONE + ":ussdCanonicalRoute"));
+        assertEquals("11*1", state.get(ORDINARY_PHONE + ":ussdCanonicalRoute"));
     }
 
     @Test void bothTmfEntriesShareCanonicalStateAndFollowupOneNeverResolvesAgain(CapturedOutput output) throws Exception {
         gateway.setDiagnosticsEnabled(true);
         gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
-        for (String service : List.of("*7447*10#", "*7447*100*10#")) {
+        for (String service : List.of("*7447*10#", "*7447*11*10#")) {
             String session = service.equals("*7447*10#") ? "short-tmf" : "canonical-tmf";
             String menu = call(allowedPhone, session, service, "", "", "BEGIN");
             assertTrue(menu.contains("TEXT ME FOOD FOUNDATION"));
-            assertEquals("100*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
+            assertEquals("11*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
             assertEquals("10", state.get(allowedPhone + ":ussdPublicRoute"));
-            assertEquals(service.contains("100") ? "100" : "", state.get(allowedPhone + ":ussdTransportPrefix"));
+            assertEquals(service.contains("11") ? "11" : "", state.get(allowedPhone + ":ussdTransportPrefix"));
             assertTrue(call(allowedPhone, session, service, "1", "", "CONTINUE").contains("Enter 4-digit PIN"));
             assertEquals("pin", state.get(allowedPhone + ":tmfFlow"));
-            assertEquals("100*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
+            assertEquals("11*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
         }
         verify(resolver, times(2)).resolveEntry(any(), anyBoolean(), anyBoolean());
         assertTrue(output.getAll().contains("\"originalServiceCode\":\"*7447*10#\""));
-        assertTrue(output.getAll().contains("\"originalServiceCode\":\"*7447*100*10#\""));
-        assertTrue(output.getAll().contains("\"canonicalRoute\":\"100*10\""));
+        assertTrue(output.getAll().contains("\"originalServiceCode\":\"*7447*11*10#\""));
+        assertTrue(output.getAll().contains("\"canonicalRoute\":\"11*10\""));
         assertTrue(output.getAll().contains("\"publicRoute\":\"10\""));
-        assertTrue(output.getAll().contains("\"transportPrefix\":\"100\""));
+        assertTrue(output.getAll().contains("\"transportPrefix\":\"11\""));
         assertTrue(output.getAll().contains("\"handler\":\"TMF\""));
         assertFalse(output.getAll().contains(allowedPhone));
         verify(redis, atLeastOnce()).expire(eq(allowedPhone + ":ussdCanonicalRoute"), eq(15L), eq(TimeUnit.MINUTES));
@@ -417,11 +417,11 @@ class UssdControllerTest {
 
     @Test void splitTmfCallbackCanonicalizesAndParentOnlyContinuationRetainsCanonicalState() throws Exception {
         mvc.perform(post("/ussd").param("phone", allowedPhone).param("sessionId", "split-tmf")
-            .param("serviceCode", "*7447*100#").param("ussdString", "10").header("Accept", "text/plain"))
+            .param("serviceCode", "*7447*11#").param("ussdString", "10").header("Accept", "text/plain"))
             .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("TEXT ME FOOD FOUNDATION")));
-        assertEquals("100*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
+        assertEquals("11*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
         assertTrue(call(allowedPhone, "split-tmf", "*7447#", "1", "", "CONTINUE").contains("Enter 4-digit PIN"));
-        assertEquals("100*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
+        assertEquals("11*10", state.get(allowedPhone + ":ussdCanonicalRoute"));
         verify(resolver, times(1)).resolveEntry(any(), anyBoolean(), anyBoolean());
         assertTrue(call(allowedPhone, "split-tmf", "*7447#", "0", "", "CONTINUE").startsWith("END "));
         assertFalse(state.containsKey(allowedPhone + ":ussdCanonicalRoute"));
