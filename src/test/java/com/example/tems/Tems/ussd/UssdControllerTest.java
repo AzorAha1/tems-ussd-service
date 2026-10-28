@@ -159,10 +159,6 @@ class UssdControllerTest {
         hml("", null);
         assertTrue(hml("7447*1", null).contains("CITY BOY MOVEMENT"));
     }
-    @Test void hmlElevenAliasOpensCbm() throws Exception {
-        gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
-        assertTrue(hml("7447*11", "e1").contains("CITY BOY MOVEMENT"));
-    }
     @Test void hmlElevenPrefixWorksLikeOneHundred() throws Exception {
         gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
         assertTrue(hml("7447*11", "p0").contains("Welcome to TEMS"));

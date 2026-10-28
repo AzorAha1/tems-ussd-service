@@ -31,8 +31,14 @@ public class AggregatorService {
 
     public enum Telco { MTN, AIRTEL, NINEMOBILE, GLO, UNKNOWN }
 
-    /** STARTED: HML accepted the request. SKIPPED: nothing was sent (disabled, no key, unknown network). FAILED: HML or the network call failed. */
-    public enum InitiateResult { STARTED, SKIPPED, FAILED }
+    /**
+     * STARTED: HML accepted the request. SKIPPED: nothing was sent (disabled, no key, unknown network).
+     * FAILED: HML refused it, or it never left us (safe to try again).
+     * UNKNOWN: it was sent but no answer came back (timeout or reset), so HML may still have processed it.
+     */
+    public enum InitiateResult { STARTED, SKIPPED, FAILED, UNKNOWN }
+
+    private enum PostResult { OK, REJECTED, UNKNOWN }
 
     // Approximate Nigerian prefixes, used ONLY when HML did not send a telco. Verify against the current NCC list.
     private static final Set<String> MTN_PREFIXES = Set.of("703", "704", "706", "803", "806", "810", "813", "814", "816", "903", "906", "913", "916");
@@ -60,7 +66,7 @@ public class AggregatorService {
         this.enabled = enabled;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(3000);
-        factory.setReadTimeout(8000);
+        factory.setReadTimeout(5000);
         this.restTemplate = new RestTemplate(factory);
     }
 
@@ -72,8 +78,9 @@ public class AggregatorService {
 
         Map<String, Object> payload = basePayload(phoneNumber, telco);
         payload.put("channel", "USSD");
-        return post(host + "/product/subscription/initiate", payload, telco, "initiate")
-            ? InitiateResult.STARTED : InitiateResult.FAILED;
+        PostResult result = post(host + "/product/subscription/initiate", payload, telco, "initiate");
+        if (result == PostResult.OK) return InitiateResult.STARTED;
+        return result == PostResult.UNKNOWN ? InitiateResult.UNKNOWN : InitiateResult.FAILED;
     }
 
     /** Stop a subscription (HML's docs: POST /product/subscription/unsubscribe). Not used by the USSD flow yet. */
@@ -81,7 +88,7 @@ public class AggregatorService {
         Telco telco = resolveTelco(telcoFromHml, phoneNumber);
         String host = readyHost(telco, "unsubscribe");
         if (host == null) return false;
-        return post(host + "/product/subscription/unsubscribe", basePayload(phoneNumber, telco), telco, "unsubscribe");
+        return post(host + "/product/subscription/unsubscribe", basePayload(phoneNumber, telco), telco, "unsubscribe") == PostResult.OK;
     }
 
     public boolean initiateSubscription(String phoneNumber, String telcoFromHml) {
@@ -120,7 +127,7 @@ public class AggregatorService {
         return payload;
     }
 
-    private boolean post(String url, Map<String, Object> payload, Telco telco, String action) {
+    private PostResult post(String url, Map<String, Object> payload, Telco telco, String action) {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(apiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -134,14 +141,39 @@ public class AggregatorService {
             LOG.info("aggregator_{} telco={} http={} ok={} hml_status_code={} hml_message={}", action, telco,
                 response.getStatusCode().value(), ok,
                 body == null ? null : body.get("status_code"), safeMessage(body == null ? null : body.get("message")));
-            return ok;
+            return ok ? PostResult.OK : PostResult.REJECTED;
         } catch (RestClientResponseException e) {
-            LOG.warn("aggregator_{} failed telco={} http={}", action, telco, e.getStatusCode().value());
-            return false;
+            int status = e.getStatusCode().value();
+            LOG.warn("aggregator_{} failed telco={} http={}", action, telco, status);
+            // 502/503/504 come from a gateway in front of HML: we cannot tell whether HML processed the request.
+            return (status == 502 || status == 503 || status == 504) ? PostResult.UNKNOWN : PostResult.REJECTED;
         } catch (Exception e) {
-            LOG.warn("aggregator_{} failed telco={} type={}", action, telco, e.getClass().getSimpleName());
-            return false;
+            boolean neverSent = neverReachedServer(e);
+            LOG.warn("aggregator_{} failed telco={} type={} cause={} request_sent={}", action, telco,
+                e.getClass().getSimpleName(), rootCauseName(e), !neverSent);
+            return neverSent ? PostResult.REJECTED : PostResult.UNKNOWN;
         }
+    }
+
+    /** True when the failure happened before the request left us (connection refused, unknown host, connect timeout). */
+    static boolean neverReachedServer(Throwable error) {
+        Throwable t = error;
+        int depth = 0;
+        while (t != null && depth++ < 10) {
+            if (t instanceof java.net.ConnectException || t instanceof java.net.UnknownHostException
+                    || t instanceof java.net.NoRouteToHostException) return true;
+            if (t instanceof java.net.SocketTimeoutException && t.getMessage() != null
+                    && t.getMessage().toLowerCase(Locale.ROOT).contains("connect")) return true;
+            t = t.getCause() == t ? null : t.getCause();
+        }
+        return false;
+    }
+
+    static String rootCauseName(Throwable error) {
+        Throwable t = error;
+        int depth = 0;
+        while (t.getCause() != null && t.getCause() != t && depth++ < 10) t = t.getCause();
+        return t.getClass().getSimpleName();
     }
 
     /** A short, log-safe version of HML's message: long digit runs (phone numbers, ids) are masked. */

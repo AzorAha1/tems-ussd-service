@@ -31,7 +31,7 @@ public class PaymentGate {
 
     public enum Mode { OFF, SHADOW, ALLOWLIST, ON }
 
-    static final String MSG_PENDING = "END A N12 payment request was sent by SMS. Reply 1 to accept it, then wait for our confirmation SMS before you dial *7447# again.";
+        static final String MSG_PENDING = "END A N12 payment request was sent by SMS. Reply 1 to accept it, then dial *7447# again in a minute.";
     static final String MSG_AIRTIME = "END You do not have enough airtime for the N12 payment. Please recharge and dial *7447# again.";
     static final String MSG_ERROR = "END We could not complete your N12 payment. Please try again in a few minutes.";
     static final String MSG_START_FAILED = "END We could not send your N12 payment request. Please try again in a few minutes.";
