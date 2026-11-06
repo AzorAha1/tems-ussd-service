@@ -1659,7 +1659,6 @@ public class ussdcontroller {
         if (CBM_ENABLED) {
             return "1. City Boy Movement\n" +
                 "2. Search Organizations\n" +
-                "3. About TEMS\n" +
                 "0. Exit";
         }
         return "1. Search Organizations\n" +
