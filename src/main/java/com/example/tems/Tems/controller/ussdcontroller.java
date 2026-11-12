@@ -64,6 +64,7 @@ import com.example.tems.Tems.service.NinLookupService;
 import com.example.tems.Tems.service.PaymentGate;
 import com.example.tems.Tems.service.Smsservice;
 import com.example.tems.Tems.service.SubscriptionService;
+import com.example.tems.Tems.nde.NdeFlow;
 
 
 
@@ -259,7 +260,7 @@ public class ussdcontroller {
             "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
             "tmfFlow", "tmfField", "tmfPhone", "tmfVerified",
             "tmfStatePage", "tmfSelectedState", "tmfLgaPage", "tmfSelectedLga",
-            "tmfVendorPage", "tmfSelectedVendor", "tmfRedeemAmount",
+            "tmfVendorPage", "tmfSelectedVendor", "tmfRedeemAmount","ndeFlow", "ndeLang"
         };
 
         // FFS registration keys can be added here if needed
@@ -271,6 +272,19 @@ public class ussdcontroller {
 
     }
     private static final boolean CBM_ENABLED = true; // Set to true to enable CBM features
+    private final NdeFlow ndeFlow = new NdeFlow();
+
+    private NdeFlow.Session ndeSession(String phone) {
+        return new NdeFlow.Session() {
+            @Override public String get(String key) {
+                Object value = retrieveFromSession(phone, key);
+                return value == null ? null : String.valueOf(value);
+            }
+            @Override public void set(String key, String value) {
+                saveToSession(phone, key, value);
+            }
+        };
+    }
 
     // check if is cbmspecial number    
     private boolean isCbmSpecialNumber(String phoneNumber) {
@@ -1563,6 +1577,13 @@ public class ussdcontroller {
 
             return handleNABTEBRegistrationFlow(normalizedPhoneNumber, inputedText);
         }
+        if (retrieveFromSession(normalizedPhoneNumber, NdeFlow.FLOW_KEY) != null) {
+            String ndeReply = ndeFlow.handle(ndeSession(normalizedPhoneNumber), inputedText);
+            if (NdeFlow.TEMS_MENU.equals(ndeReply)) {
+                return HandleLevel1(normalizedPhoneNumber, new String[0], true);
+            }
+            return ndeReply;
+        }
         String tmfFlow = (String) retrieveFromSession(normalizedPhoneNumber, "tmfFlow");
         if (tmfFlow != null) {
             if (!isTextMeFoodAllowedPhone(normalizedPhoneNumber)) {
@@ -1701,6 +1722,12 @@ public class ussdcontroller {
                 }
                 if (isTextMeFoodSearchTerm(searchTerm)) {
                     return startTextMeFoodFromSearch(phone);
+                }
+                if (NdeFlow.isSearchTerm(searchTerm)) {
+                    clearNavigationSession(phone);
+                    saveToSession(phone, "menuShown", "true");
+                    saveToSession(phone, "lastInteraction", System.currentTimeMillis());
+                    return ndeFlow.start(ndeSession(phone));
                 }
                 
                 Pageable firstPage = PageRequest.of(0, 5);
