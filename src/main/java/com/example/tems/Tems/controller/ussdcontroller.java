@@ -65,7 +65,7 @@ import com.example.tems.Tems.service.PaymentGate;
 import com.example.tems.Tems.service.Smsservice;
 import com.example.tems.Tems.service.SubscriptionService;
 import com.example.tems.Tems.nde.NdeFlow;
-
+import com.example.tems.Tems.service.NdeRegistrationService;
 
 
 
@@ -260,7 +260,8 @@ public class ussdcontroller {
             "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
             "tmfFlow", "tmfField", "tmfPhone", "tmfVerified",
             "tmfStatePage", "tmfSelectedState", "tmfLgaPage", "tmfSelectedLga",
-            "tmfVendorPage", "tmfSelectedVendor", "tmfRedeemAmount","ndeFlow", "ndeLang"
+            "tmfVendorPage", "tmfSelectedVendor", "tmfRedeemAmount","ndeFlow", "ndeLang",
+            "ndeRegType", "ndeRegStep", "ndeA0", "ndeA1", "ndeA2", "ndeA3", "ndeA4"
         };
 
         // FFS registration keys can be added here if needed
@@ -272,7 +273,10 @@ public class ussdcontroller {
 
     }
     private static final boolean CBM_ENABLED = true; // Set to true to enable CBM features
-    private final NdeFlow ndeFlow = new NdeFlow();
+    @Autowired(required = false)
+    private NdeRegistrationService ndeRegistrations;
+
+    private final NdeFlow ndeFlow = new NdeFlow(() -> ndeRegistrations);
 
     private NdeFlow.Session ndeSession(String phone) {
         return new NdeFlow.Session() {
@@ -282,6 +286,9 @@ public class ussdcontroller {
             }
             @Override public void set(String key, String value) {
                 saveToSession(phone, key, value);
+            }
+            @Override public String phone() {
+                return phone;
             }
         };
     }
