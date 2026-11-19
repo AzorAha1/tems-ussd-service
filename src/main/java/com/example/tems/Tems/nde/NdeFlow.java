@@ -14,9 +14,13 @@ import java.util.logging.Logger;
  *
  * PHASE 1: reach NDE from "Search Organizations" by typing NDE, pick a language (only English works for now) and see
  *          the NDE main menu. Navigation: 0 back, 00 main menu, 000 exit.
- * PHASE 2 (this version): "1 Register / Verify" works: job-seeker, employer and skills-training registration, and
+ * PHASE 2: "1 Register / Verify" works: job-seeker, employer and skills-training registration, and
  *          verification of a registration by its reference number. Registrations are saved through a Store.
- *          The other nine services still show a "coming soon" screen.
+ * PHASE 3 (this version): "2 Job Matching" works (NDE Employment Connect): Find Employment, Find Workers, Register Job
+ *          Vacancy and Check Matching Status. Requests are saved through a MatchStore. A job vacancy must name an
+ *          employer reference that was registered from the same phone number. These screens only RECORD requests;
+ *          nothing matches people to jobs or sends notifications yet.
+ *          The other eight services still show a "coming soon" screen.
  *
  * This class keeps no state of its own. The user's position and answers live in the caller's session (the controller's
  * Redis session, per phone number), and registrations are saved through the Store, so the class has no dependency on
@@ -44,6 +48,19 @@ public final class NdeFlow {
         Registration findForPhone(String reference, String phone);
     }
 
+    /** Where job-matching requests are saved. Implemented by NdeJobMatchService. */
+    public interface MatchStore {
+        /** Saves a new request and returns its reference (for example NDE-JM1001). */
+        String save(JobMatch match);
+        /** The request with this reference, only if it was made from this phone number; otherwise null. */
+        JobMatch findForPhone(String reference, String phone);
+    }
+
+    /** A job-matching request as the flow sees it. Fields that do not apply to a type are null. */
+    public record JobMatch(String type, String phone, String employerReference, String category, String state,
+                           String skill, Integer quantity, String reference, String status,
+                           LocalDateTime createdAt) {}
+
     /** A registration as the flow sees it. Fields that do not apply to a type are null. */
     public record Registration(String type, String phone, String name, String state, String lga,
                                String qualification, String employmentCategory, String contactPhone,
@@ -56,6 +73,11 @@ public final class NdeFlow {
     public static final String JOB_SEEKER = "JOB_SEEKER";
     public static final String EMPLOYER = "EMPLOYER";
     public static final String TRAINING = "TRAINING";
+
+    /** The three kinds of job-matching request. */
+    public static final String FIND_EMPLOYMENT = "FIND_EMPLOYMENT";
+    public static final String FIND_WORKERS = "FIND_WORKERS";
+    public static final String VACANCY = "VACANCY";
 
     public static final String FLOW_KEY = "ndeFlow";
     public static final String LANG_KEY = "ndeLang";
@@ -74,6 +96,10 @@ public final class NdeFlow {
     private static final String S_REGISTER = "register";
     private static final String S_VERIFY_REF = "verify_ref";
     private static final String S_VERIFY_RESULT = "verify_result";
+    private static final String S_JM_MENU = "jm_menu";
+    private static final String S_JM_FORM = "jm_form";
+    private static final String S_JM_STATUS_REF = "jm_status_ref";
+    private static final String S_JM_STATUS_RESULT = "jm_status_result";
 
     /** Titles of the ten services, in the order of the NDE main menu. */
     private static final String[] SERVICES = {
@@ -84,7 +110,7 @@ public final class NdeFlow {
 
     // ---- the registration questions, in the order they are asked ----
 
-    private enum Kind { NAME, ORG, STATE, LGA, PHONE, CHOICE }
+    private enum Kind { NAME, ORG, STATE, LGA, PHONE, CHOICE, SKILL, COUNT, EMPREF }
 
     private record Step(String field, Kind kind, String prompt, String[] options) {}
 
@@ -116,6 +142,32 @@ public final class NdeFlow {
         step("trade", Kind.CHOICE, "Select Preferred Trade:",
             "Tailoring", "Welding", "Electrical Installation", "Catering", "Other"));
 
+    // ---- the job-matching questions (phase 3) ----
+
+    private static final String[] CATEGORIES = {
+        "Skilled / Technical", "Administrative", "Agriculture", "General Labour", "Other"
+    };
+
+    private static final List<Step> FIND_EMPLOYMENT_STEPS = List.of(
+        step("category", Kind.CHOICE, "Select Job Category:", CATEGORIES),
+        step("state", Kind.STATE, "Enter your state (e.g. Kano):"),
+        step("skill", Kind.SKILL, "Enter your skill (e.g. Welding):"));
+
+    private static final List<Step> FIND_WORKERS_STEPS = List.of(
+        step("category", Kind.CHOICE, "Select Worker Category:", CATEGORIES),
+        step("state", Kind.STATE, "Enter the state (e.g. Kano):"),
+        step("skill", Kind.SKILL, "Enter the skill required (e.g. Welding):"),
+        step("count", Kind.COUNT, "Enter number of workers needed:"));
+
+    private static final List<Step> VACANCY_STEPS = List.of(
+        step("employer", Kind.EMPREF, "Enter your employer reference (e.g. NDE-EMP1001):"),
+        step("category", Kind.CHOICE, "Select Job Category:", CATEGORIES),
+        step("count", Kind.COUNT, "Enter number of vacancies:"),
+        step("state", Kind.STATE, "Enter job location (state):"));
+
+    /** Most workers or vacancies one request can ask for. */
+    private static final int MAX_COUNT = 1000;
+
     // ---- Nigerian states, so the state is stored in one consistent spelling ----
 
     private static final String[] STATE_NAMES = {
@@ -137,13 +189,21 @@ public final class NdeFlow {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
     private final Supplier<Store> storeSupplier;
+    private final Supplier<MatchStore> matchStoreSupplier;
+
+    /** Phase 2 constructor: no job-matching store, so job-matching requests say "try again later". */
+    public NdeFlow(Supplier<Store> storeSupplier) {
+        this(storeSupplier, () -> null);
+    }
 
     /**
      * @param storeSupplier gives the Store when it is needed (the controller's service is injected after the flow is
      *                      constructed, so it is read lazily). It may return null; registration then says "try again later".
+     * @param matchStoreSupplier the same, for job-matching requests.
      */
-    public NdeFlow(Supplier<Store> storeSupplier) {
+    public NdeFlow(Supplier<Store> storeSupplier, Supplier<MatchStore> matchStoreSupplier) {
         this.storeSupplier = storeSupplier;
+        this.matchStoreSupplier = matchStoreSupplier;
     }
 
     /** What a user may type into "Search Organizations" to reach NDE. */
@@ -188,6 +248,10 @@ public final class NdeFlow {
             case S_REGISTER:      return handleRegister(s, choice);
             case S_VERIFY_REF:    return handleVerifyRef(s, choice);
             case S_VERIFY_RESULT: return handleVerifyResult(s, choice);
+            case S_JM_MENU:       return handleJobMenu(s, choice);
+            case S_JM_FORM:       return handleJobForm(s, choice);
+            case S_JM_STATUS_REF: return handleMatchStatusRef(s, choice);
+            case S_JM_STATUS_RESULT: return handleMatchStatusResult(s, choice);
             default:              return start(s);   // unknown state: start over rather than trap the user
         }
     }
@@ -241,6 +305,10 @@ public final class NdeFlow {
         if (index == 0) {   // 1 Register / Verify
             s.set(FLOW_KEY, S_REG_MENU);
             return regMenu(null);
+        }
+        if (index == 1) {   // 2 Job Matching
+            s.set(FLOW_KEY, S_JM_MENU);
+            return jobMenu(null);
         }
         s.set(FLOW_KEY, S_SOON);
         return "CON " + SERVICES[index] + "\n\nThis service is coming soon.\n\n0. Back\n00. Main Menu\n000. Exit";
@@ -431,6 +499,9 @@ public final class NdeFlow {
             case STATE:  return "State not recognised.";
             case LGA:    return "Please enter a valid LGA.";
             case PHONE:  return "Use 11 digits, e.g. 08012345678.";
+            case SKILL:  return "Please enter a valid skill.";
+            case COUNT:  return "Enter a number from 1 to " + MAX_COUNT + ".";
+            case EMPREF: return "Invalid reference.";
             default:     return "Invalid choice.";
         }
     }
@@ -449,6 +520,16 @@ public final class NdeFlow {
             }
             case LGA:   return v.matches("^[\\p{L}][\\p{L} .'\\-/]{1,39}$") ? v : null;
             case PHONE: return normalizePhone(v);
+            case SKILL: return v.matches("^[\\p{L}][\\p{L}\\p{N} .'\\-/&]{1,29}$") ? v : null;
+            case COUNT: {
+                if (!v.matches("^[0-9]{1,4}$")) return null;
+                int n = Integer.parseInt(v);
+                return (n >= 1 && n <= MAX_COUNT) ? String.valueOf(n) : null;   // "007" is stored as 7
+            }
+            case EMPREF: {   // NDE-EMP1001, nde emp 1001 and NDEEMP1001 are all the same reference
+                String r = v.toUpperCase(Locale.ROOT).replaceAll("\\s", "");
+                return r.matches("^NDE-?EMP[0-9]{4,9}$") ? "NDE-EMP" + r.replaceAll("[^0-9]", "") : null;
+            }
             case CHOICE:
                 if (!v.matches("[0-9]{1,2}")) return null;
                 int n = Integer.parseInt(v);
@@ -522,6 +603,211 @@ public final class NdeFlow {
             case EMPLOYER:   return "Employer";
             case TRAINING:   return "Skills Training";
             default:         return type;
+        }
+    }
+
+    // ---- job matching (phase 3) ----
+
+    private String jobMenu(String notice) {
+        return "CON " + (notice == null ? "" : notice + "\n")
+            + "NDE EMPLOYMENT CONNECT\n\n1. Find Employment\n2. Find Workers\n3. Register Job Vacancy\n"
+            + "4. Check Matching Status\n0. Back";
+    }
+
+    private String handleJobMenu(Session s, String choice) {
+        switch (choice) {
+            case "1": return beginJobForm(s, FIND_EMPLOYMENT);
+            case "2": return beginJobForm(s, FIND_WORKERS);
+            case "3": return beginJobForm(s, VACANCY);
+            case "4":
+                s.set(FLOW_KEY, S_JM_STATUS_REF);
+                return matchStatusPrompt(null);
+            case "0":
+                s.set(FLOW_KEY, S_MAIN);
+                return mainMenu();
+            default:
+                return jobMenu("Invalid choice.");
+        }
+    }
+
+    private String beginJobForm(Session s, String type) {
+        clearRegistration(s);
+        s.set(FLOW_KEY, S_JM_FORM);
+        s.set(REG_TYPE_KEY, type);
+        s.set(REG_STEP_KEY, "0");
+        return prompt(matchStepsFor(type).get(0), null);
+    }
+
+    private String handleJobForm(Session s, String choice) {
+        String type = s.get(REG_TYPE_KEY);
+        int index = parseStep(s.get(REG_STEP_KEY));
+        List<Step> steps = type == null ? null : matchStepsFor(type);
+        if (steps == null || index < 0 || index >= steps.size()) {   // lost or damaged state: do not trap the user
+            clearRegistration(s);
+            s.set(FLOW_KEY, S_JM_MENU);
+            return jobMenu(null);
+        }
+
+        if (choice.equals("0")) {   // back one question; from the first question, back to the Job Matching menu
+            if (index == 0) {
+                clearRegistration(s);
+                s.set(FLOW_KEY, S_JM_MENU);
+                return jobMenu(null);
+            }
+            s.set(REG_STEP_KEY, String.valueOf(index - 1));
+            return prompt(steps.get(index - 1), null);
+        }
+
+        Step current = steps.get(index);
+        String value = validate(current, choice);
+        if (value == null) return prompt(current, invalidNotice(current.kind()));
+        if (current.kind() == Kind.EMPREF) {
+            String problem = employerProblem(s, value);
+            if (problem != null) return prompt(current, problem);
+        }
+
+        s.set(ANSWER_KEYS[index], value);
+        if (index + 1 < steps.size()) {
+            s.set(REG_STEP_KEY, String.valueOf(index + 1));
+            return prompt(steps.get(index + 1), null);
+        }
+        return finishJobForm(s, type, steps);
+    }
+
+    /** null if this is an employer registered from this phone number; otherwise the message to show. */
+    private String employerProblem(Session s, String reference) {
+        try {
+            Store store = storeSupplier == null ? null : storeSupplier.get();
+            if (store == null) return "Service unavailable. Try again later.";
+            Registration found = store.findForPhone(reference, s.phone());
+            if (found == null || !EMPLOYER.equals(found.type())) {
+                return "Employer reference not found for this number. Register as Employer first.";
+            }
+            return null;
+        } catch (RuntimeException e) {
+            LOG.warning("nde_job_match employer_lookup_failed cause=" + e.getClass().getSimpleName());
+            return "Service unavailable. Try again later.";
+        }
+    }
+
+    private String finishJobForm(Session s, String type, List<Step> steps) {
+        String count = answer(s, steps, "count");
+        JobMatch draft = new JobMatch(type, s.phone(), answer(s, steps, "employer"),
+            answer(s, steps, "category"), answer(s, steps, "state"), answer(s, steps, "skill"),
+            count == null ? null : Integer.valueOf(count),
+            null, VACANCY.equals(type) ? "Pending Review" : "Submitted", LocalDateTime.now());
+        clear(s);   // the answers are copied into the draft; the session is finished either way
+
+        String reference = saveMatch(draft);
+        if (reference == null) {
+            return "END We could not save your request. Please try again later.";
+        }
+        switch (type) {
+            case FIND_EMPLOYMENT:
+                return "END Employment Matching Request Received.\n\nSkill: " + shorten(draft.skill(), 16)
+                    + "\nLocation: " + draft.state() + "\nReference: " + reference
+                    + "\n\nYou will be notified when an opportunity is identified.";
+            case FIND_WORKERS:
+                return "END Employer Request Received.\n\nWorkers Required: " + draft.quantity() + " ("
+                    + shorten(draft.skill(), 14) + ")\nLocation: " + draft.state() + "\nReference: " + reference
+                    + "\n\nYour request will be reviewed for suitable matches.";
+            default:
+                return "END Vacancy Submission Received.\n\nReference: " + reference + "\nStatus: Pending Review."
+                    + "\n\nMatching and vacancy publication require NDE verification and approved data sources.";
+        }
+    }
+
+    private String saveMatch(JobMatch draft) {
+        try {
+            MatchStore store = matchStoreSupplier == null ? null : matchStoreSupplier.get();
+            return store == null ? null : store.save(draft);
+        } catch (RuntimeException e) {
+            LOG.warning("nde_job_match save_failed type=" + draft.type() + " cause=" + e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    private static List<Step> matchStepsFor(String type) {
+        switch (type) {
+            case FIND_EMPLOYMENT: return FIND_EMPLOYMENT_STEPS;
+            case FIND_WORKERS:    return FIND_WORKERS_STEPS;
+            case VACANCY:         return VACANCY_STEPS;
+            default:              return null;
+        }
+    }
+
+    // ---- check the status of a job-matching request ----
+
+    private String matchStatusPrompt(String notice) {
+        return "CON " + (notice == null ? "" : notice + "\n")
+            + "Enter your request reference (e.g. NDE-JM1001):\n\n0. Back";
+    }
+
+    private String handleMatchStatusRef(Session s, String choice) {
+        if (choice.equals("0")) {
+            s.set(FLOW_KEY, S_JM_MENU);
+            return jobMenu(null);
+        }
+        String cleaned = choice.toUpperCase(Locale.ROOT).replaceAll("\\s", "");
+        if (!cleaned.matches("^NDE-?(JM|W|V)[0-9]{4,9}$")) {
+            return matchStatusPrompt("Invalid reference.");
+        }
+        String reference = cleaned.replaceAll("^NDE-?", "NDE-");   // NDEJM1001 and NDE-JM1001 are the same reference
+        JobMatch found;
+        try {
+            MatchStore store = matchStoreSupplier == null ? null : matchStoreSupplier.get();
+            if (store == null) {
+                s.set(FLOW_KEY, S_JM_STATUS_RESULT);
+                return "CON Service unavailable. Please try again later.\n\n1. Check another\n0. Back";
+            }
+            found = store.findForPhone(reference, s.phone());
+        } catch (RuntimeException e) {
+            LOG.warning("nde_job_match lookup_failed cause=" + e.getClass().getSimpleName());
+            s.set(FLOW_KEY, S_JM_STATUS_RESULT);
+            return "CON Service unavailable. Please try again later.\n\n1. Check another\n0. Back";
+        }
+        s.set(FLOW_KEY, S_JM_STATUS_RESULT);
+        if (found == null) {
+            return "CON Reference not found for this number.\n\n1. Check another\n0. Back";
+        }
+        return "CON Reference: " + found.reference() + "\nType: " + matchLabel(found.type())
+            + "\n" + matchDetail(found) + "\nLocation: " + found.state()
+            + "\nStatus: " + found.status()
+            + (found.createdAt() == null ? "" : "\nDate: " + found.createdAt().format(DATE))
+            + "\n\n1. Check another\n0. Back";
+    }
+
+    private String handleMatchStatusResult(Session s, String choice) {
+        switch (choice) {
+            case "1":
+                s.set(FLOW_KEY, S_JM_STATUS_REF);
+                return matchStatusPrompt(null);
+            case "0":
+                s.set(FLOW_KEY, S_JM_MENU);
+                return jobMenu(null);
+            default:
+                return "CON Invalid choice.\n\n1. Check another\n0. Back";
+        }
+    }
+
+    private static String matchLabel(String type) {
+        switch (type) {
+            case FIND_EMPLOYMENT: return "Find Employment";
+            case FIND_WORKERS:    return "Find Workers";
+            case VACANCY:         return "Job Vacancy";
+            default:              return type;
+        }
+    }
+
+    /** The one line that says what was asked for. */
+    private static String matchDetail(JobMatch m) {
+        switch (m.type()) {
+            case FIND_WORKERS:
+                return "Workers: " + m.quantity() + " (" + shorten(m.skill(), 16) + ")";
+            case VACANCY:
+                return "Vacancies: " + m.quantity() + " (" + m.category() + ")";
+            default:
+                return "Skill: " + shorten(m.skill(), 16);
         }
     }
 

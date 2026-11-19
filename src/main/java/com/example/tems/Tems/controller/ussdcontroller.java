@@ -66,6 +66,7 @@ import com.example.tems.Tems.service.Smsservice;
 import com.example.tems.Tems.service.SubscriptionService;
 import com.example.tems.Tems.nde.NdeFlow;
 import com.example.tems.Tems.service.NdeRegistrationService;
+import com.example.tems.Tems.service.NdeJobMatchService;
 
 
 
@@ -275,8 +276,10 @@ public class ussdcontroller {
     private static final boolean CBM_ENABLED = true; // Set to true to enable CBM features
     @Autowired(required = false)
     private NdeRegistrationService ndeRegistrations;
+    @Autowired(required = false)
+    private NdeJobMatchService ndeJobMatches;
 
-    private final NdeFlow ndeFlow = new NdeFlow(() -> ndeRegistrations);
+    private final NdeFlow ndeFlow = new NdeFlow(() -> ndeRegistrations, () -> ndeJobMatches);
 
     private NdeFlow.Session ndeSession(String phone) {
         return new NdeFlow.Session() {
