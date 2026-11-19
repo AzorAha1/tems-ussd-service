@@ -762,17 +762,21 @@ public class ussdcontroller {
         try {
             CbmSupportGroupRegistration reg = new CbmSupportGroupRegistration();
             reg.setPhoneNumber(phone);
-            reg.setReferenceId("CBM-SUP-" + ((int) (Math.random() * 9000) + 1000));
             reg.setOrgName((String) retrieveFromSession(phone, "cbmSupportOrgName"));
             reg.setSupportType((String) retrieveFromSession(phone, "cbmSupportType"));
             reg.setSpread((String) retrieveFromSession(phone, "cbmSupportSpread"));
             reg.setReferral((String) retrieveFromSession(phone, "cbmSupportReferral"));
             reg.setCreatedAt(LocalDateTime.now());
 
-            cbmSupportGroupRegistrationRepository.save(reg);
+            CbmSupportGroupRegistration saved = cbmSupportGroupRegistrationRepository.save(reg);
+            // The reference is built from the row's own database id, so two applications can never get the same one
+            // (it used to be a random 4-digit number, which repeats). 10000 + id always has five or more digits, and the
+            // older random references had four, so the old and new kinds never clash either.
+            saved.setReferenceId("CBM-SUP-" + (10000 + saved.getId()));
+            cbmSupportGroupRegistrationRepository.save(saved);
             clearCBMSupportRegSession(phone);
 
-            return "END We will review your application\nand connect you with the national\ncoordination team.\n\nRef: " + reg.getReferenceId();
+            return "END We will review your application\nand connect you with the national\ncoordination team.\n\nRef: " + saved.getReferenceId();
         } catch (Exception e) {
 
             return "END Error saving registration. Please try again.";
