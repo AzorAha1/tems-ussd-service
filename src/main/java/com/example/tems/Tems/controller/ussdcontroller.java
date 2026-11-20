@@ -43,6 +43,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.example.tems.Tems.client.CbmApiClient;
 import com.example.tems.Tems.client.CbmUssdRelayClient;
+import com.example.tems.Tems.cbm.CbmElectionFlow;
 import com.example.tems.Tems.client.SmsSendRequest;
 import com.example.tems.Tems.model.CacRegistration;
 import com.example.tems.Tems.model.CbmRegistration;
@@ -67,6 +68,7 @@ import com.example.tems.Tems.service.SubscriptionService;
 import com.example.tems.Tems.nde.NdeFlow;
 import com.example.tems.Tems.service.NdeRegistrationService;
 import com.example.tems.Tems.service.NdeJobMatchService;
+import com.example.tems.Tems.service.CbmElectionSupervisorService;
 
 
 
@@ -262,7 +264,9 @@ public class ussdcontroller {
             "tmfFlow", "tmfField", "tmfPhone", "tmfVerified",
             "tmfStatePage", "tmfSelectedState", "tmfLgaPage", "tmfSelectedLga",
             "tmfVendorPage", "tmfSelectedVendor", "tmfRedeemAmount","ndeFlow", "ndeLang",
-            "ndeRegType", "ndeRegStep", "ndeA0", "ndeA1", "ndeA2", "ndeA3", "ndeA4"
+            "ndeRegType", "ndeRegStep", "ndeA0", "ndeA1", "ndeA2", "ndeA3", "ndeA4",
+            "cbmElection", "cbmEsStep", "cbmEsCheck", "cbmEsMStatus",
+            "cbmEsA0", "cbmEsA1", "cbmEsA2", "cbmEsA3", "cbmEsA4", "cbmEsA5"
         };
 
         // FFS registration keys can be added here if needed
@@ -278,6 +282,27 @@ public class ussdcontroller {
     private NdeRegistrationService ndeRegistrations;
     @Autowired(required = false)
     private NdeJobMatchService ndeJobMatches;
+
+    // CBM Election Results Collection (polling-unit supervisors). Null when the controller is built by hand in a unit test.
+    @Autowired(required = false)
+    private CbmElectionSupervisorService cbmElectionSupervisors;
+
+    private final CbmElectionFlow cbmElectionFlow = new CbmElectionFlow(() -> cbmElectionSupervisors);
+
+    private CbmElectionFlow.Session cbmElectionSession(String phone) {
+        return new CbmElectionFlow.Session() {
+            @Override public String get(String key) {
+                Object value = retrieveFromSession(phone, key);
+                return value == null ? null : String.valueOf(value);
+            }
+            @Override public void set(String key, String value) {
+                saveToSession(phone, key, value);
+            }
+            @Override public String phone() {
+                return phone;
+            }
+        };
+    }
 
     private final NdeFlow ndeFlow = new NdeFlow(() -> ndeRegistrations, () -> ndeJobMatches);
 
@@ -311,10 +336,11 @@ public class ussdcontroller {
             "2. About\n" +
             "3. Support Group Reg\n" +
             "4. Achievements\n" +
-            "5. News\n" +
-            "6. Contacts\n" +
-            "7. Updates\n" +
-            "0. Exit";
+            "5. Contacts\n" +
+            "6. News and Updates\n" +
+            "7. Election Results Collection\n" +
+            "8. Language\n" +
+            "9. Exit";
     }
 
     // FIXED: Renamed constructor parameter and assignment
@@ -592,6 +618,24 @@ public class ussdcontroller {
                 return handleCBMPaginated(phone, input, NEWS_ITEMS, "main_menu");
             case "check_membership":
                 return handleCBMCheckMembership(phone, input);
+            case "election": {
+                CbmElectionFlow.Session electionSession = cbmElectionSession(phone);
+                if (electionSession.get(CbmElectionFlow.FLOW_KEY) == null) {
+                    // the election session was reset (a new dial): do not restart it from a stale CBM state
+                    saveToSession(phone, "cbmFlow", "main_menu");
+                    return showCBMMenu();
+                }
+                String electionReply = cbmElectionFlow.handle(electionSession, input);
+                if (CbmElectionFlow.BACK_TO_CBM.equals(electionReply)) {
+                    saveToSession(phone, "cbmFlow", "main_menu");
+                    return showCBMMenu();
+                }
+                return electionReply;
+            }
+            case "language":
+                // placeholder until the language options are decided; any key returns to the CBM menu
+                saveToSession(phone, "cbmFlow", "main_menu");
+                return showCBMMenu();
             default:
                 // was: cbmFlow = null. That dropped non-whitelisted users (who enter via *7447*27#)
                 // into the TEMS search menu on their next keypress while the CBM menu was on screen.
@@ -884,11 +928,6 @@ public class ussdcontroller {
                     "0. Back";
                     
             case "5":
-                saveToSession(phone, "cbmFlow", "news");
-                saveToSession(phone, "cbmContentPage", 0);
-                return handleCBMPaginated(phone, "", NEWS_ITEMS, "main_menu");
-                
-            case "6":
                 return "END CONTACTS\n\n" +
                     "162 Aminu Kano Crescent,\n" +
                     "Abuja-FCT, Nigeria\n" +
@@ -896,11 +935,20 @@ public class ussdcontroller {
                     "081 8000 8077\n" +
                     "info@cbmnigeria.org";
                     
+            case "6":
+                saveToSession(phone, "cbmFlow", "news");
+                saveToSession(phone, "cbmContentPage", 0);
+                return handleCBMPaginated(phone, "", NEWS_ITEMS, "main_menu");
+                
             case "7":
-                return "END NEWS AND UPDATE\n\nCheck back later for updates.\n\nwww.cbm.com";
-            
-            
-                        
+                saveToSession(phone, "cbmFlow", "election");
+                return cbmElectionFlow.start(cbmElectionSession(phone));
+
+            case "8":
+                saveToSession(phone, "cbmFlow", "language");
+                return "CON LANGUAGE\n\nLanguage options are coming soon.\n\n0. Back";
+
+            case "9":
             case "0":
                 saveToSession(phone, "cbmFlow", null);
                 resetUserSession(phone);
