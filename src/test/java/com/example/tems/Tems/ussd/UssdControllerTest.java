@@ -159,6 +159,12 @@ class UssdControllerTest {
         hml("", null);
         assertTrue(hml("7447*1", null).contains("CITY BOY MOVEMENT"));
     }
+    // A longer CBM menu (168 characters) made MTN and Glo show an error instead of the menu. Keep it short.
+    @Test void cbmMenuStaysShortEnoughForTheNetworks() throws Exception {
+        String menu = hml("7447*1", "len1");
+        assertTrue(menu.contains("CITY BOY MOVEMENT"));
+        assertTrue(menu.length() <= 150, menu.length() + " characters: " + menu);
+    }
     @Test void hmlElevenPrefixWorksLikeOneHundred() throws Exception {
         gateway.setInputMode(UssdGatewayProperties.InputMode.CUMULATIVE);
         assertTrue(hml("7447*11", "p0").contains("Welcome to TEMS"));

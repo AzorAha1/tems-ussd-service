@@ -331,14 +331,16 @@ public class ussdcontroller {
     }
     // show cbm menu
     private String showCBMMenu() {
-        return "CON CITY BOY MOVEMENT\n\n" +
-            "1. Join The Movement\n" +
+        // Keep this whole screen under about 140 characters: networks differ (160 is the usual safe limit) and a
+        // longer menu made MTN and Glo show an error instead of the menu (it was 168 characters).
+        return "CON CITY BOY MOVEMENT\n" +
+            "1. Join\n" +
             "2. About\n" +
-            "3. Support Group Reg\n" +
+            "3. Support Group\n" +
             "4. Achievements\n" +
             "5. Contacts\n" +
-            "6. News and Updates\n" +
-            "7. Election Results Collection\n" +
+            "6. News/Updates\n" +
+            "7. Election Results\n" +
             "8. Language\n" +
             "9. Exit";
     }
