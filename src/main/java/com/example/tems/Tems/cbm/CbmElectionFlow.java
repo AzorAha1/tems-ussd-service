@@ -100,6 +100,9 @@ public final class CbmElectionFlow {
         new Step("pu", Kind.PU_CODE, "Enter your Polling Unit Code\n(8 or 9 digits, e.g. 010203004):"));
 
     private static final int ID_STEP = 1;
+    private static final int STATE_STEP = 2;
+    /** The sample code printed on the screen. People copy it, so it is never accepted as an answer. */
+    private static final String EXAMPLE_PU = "01/02/03/004";
 
     // ---- Nigerian states, so the state is stored in one consistent spelling ----
 
@@ -259,6 +262,10 @@ public final class CbmElectionFlow {
         Step current = STEPS.get(index);
         String value = validate(current.kind(), choice);
         if (value == null) return prompt(index, invalidNotice(current.kind()));
+        if (current.kind() == Kind.PU_CODE) {
+            String problem = puProblem(s.get(ANSWER_KEYS[STATE_STEP]), value);
+            if (problem != null) return prompt(index, problem);
+        }
 
         s.set(ANSWER_KEYS[index], value);
         if (current.kind() == Kind.MEMBER_ID) return checkMemberId(s, value);
@@ -409,7 +416,7 @@ public final class CbmElectionFlow {
     private static String invalidNotice(Kind kind) {
         switch (kind) {
             case NAME:      return "Please enter a valid name.";
-            case MEMBER_ID: return "Invalid ID. Check it and try again.";
+            case MEMBER_ID: return "Invalid ID. Enter it as 123456 or CBM-2026-NG-123456.";
             case STATE:     return "State not recognised.";
             case LGA:       return "Please enter a valid LGA.";
             case WARD:      return "Please enter a valid ward.";
@@ -423,8 +430,10 @@ public final class CbmElectionFlow {
         switch (kind) {
             case NAME:
                 return v.matches("^[\\p{L}][\\p{L} .'\\-]{1,59}$") ? v : null;
-            case MEMBER_ID:   // kept exactly as typed; only characters that are safe to send to CBM's lookup
-                return v.matches("^[A-Za-z0-9][A-Za-z0-9\\-_/.]{2,29}$") ? v : null;
+            case MEMBER_ID: {   // a City Boy ID: 5 to 7 digits, or the full form CBM-2026-NG-123456 (kept in capitals)
+                if (v.matches("^[0-9]{5,7}$")) return v;
+                return v.matches("(?i)^CBM-[0-9]{4}-NG-[0-9]{5,7}$") ? v.toUpperCase(java.util.Locale.ROOT) : null;
+            }
             case STATE: {     // accepts "Kano", "kano state", "FCT", "Abuja" ...
                 String key = lettersOnly(v);
                 String found = STATES.get(key);
@@ -453,6 +462,25 @@ public final class CbmElectionFlow {
         if (!digits.matches("^[0-9]{8,9}$")) return null;
         return digits.substring(0, 2) + "/" + digits.substring(2, 4) + "/" + digits.substring(4, 6) + "/"
             + digits.substring(6);
+    }
+
+    /** Why a polling unit code cannot be right for this state, or null if it can be. */
+    static String puProblem(String state, String code) {
+        if (EXAMPLE_PU.equals(code)) return "That is only an example. Enter your own polling unit code.";
+        int number = stateNumber(state);
+        if (number > 0) {
+            String prefix = String.format("%02d", number);
+            if (!code.startsWith(prefix + "/")) return state + " codes start with " + prefix + ". Check and try again.";
+        }
+        return null;
+    }
+
+    /** INEC's number for a state: alphabetical, 1 for Abia to 36 for Zamfara, 37 for FCT. -1 if unknown. */
+    static int stateNumber(String state) {
+        for (int i = 0; i < STATE_NAMES.length; i++) {
+            if (STATE_NAMES[i].equals(state)) return i + 1;
+        }
+        return -1;
     }
 
     /** Text shown to the supervisor for a stored status. */

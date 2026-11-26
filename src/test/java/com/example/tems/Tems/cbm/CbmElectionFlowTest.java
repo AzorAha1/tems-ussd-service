@@ -49,7 +49,7 @@ class CbmElectionFlowTest {
             return new MemberCheck(idKnown, idKnown ? memberStatus : null);
         }
         void seed(String status) {
-            rows.add(new Supervisor(ME, "Aminu Bello", "CBM-12345", "CONFIRMED", "active", "Kano", "Dala", "Gwale",
+            rows.add(new Supervisor(ME, "Aminu Bello", "123456", "CONFIRMED", "active", "Kano", "Dala", "Gwale",
                 "20/05/03/004", "CBM-SV1001", status, LocalDateTime.of(2026, 11, 20, 9, 0)));
         }
     }
@@ -82,11 +82,11 @@ class CbmElectionFlowTest {
         return reply.substring(4).length();   // without the "CON " / "END " prefix
     }
 
-    private static final String[] FULL_REGISTRATION = {"Aminu Bello", "CBM-12345", "kano state", "Dala", "Gwale", "010203004"};
+    private static final String[] FULL_REGISTRATION = {"Aminu Bello", "123456", "kano state", "Dala", "Gwale", "190203004"};
 
     private String registerUpToConfirm() {
         flow.start(session);
-        return send("1", "Aminu Bello", "CBM-12345", "kano state", "Dala", "Gwale", "010203004");
+        return send("1", "Aminu Bello", "123456", "kano state", "Dala", "Gwale", "190203004");
     }
 
     // ---- the menu ----
@@ -173,10 +173,10 @@ class CbmElectionFlowTest {
         String confirm = registerUpToConfirm();
         assertTrue(confirm.startsWith("CON Confirm details:"));
         assertTrue(confirm.contains("Aminu Bello"));
-        assertTrue(confirm.contains("ID: CBM-12345"));
+        assertTrue(confirm.contains("ID: 123456"));
         assertTrue(confirm.contains("Kano, Dala"));
         assertTrue(confirm.contains("Ward: Gwale"));
-        assertTrue(confirm.contains("PU: 01/02/03/004"));
+        assertTrue(confirm.contains("PU: 19/02/03/004"));
 
         String done = send("1");
         assertTrue(done.startsWith("END Registration received."));
@@ -187,39 +187,39 @@ class CbmElectionFlowTest {
         Supervisor saved = db.rows.get(0);
         assertEquals(ME, saved.phone());
         assertEquals("Aminu Bello", saved.fullName());
-        assertEquals("CBM-12345", saved.memberId());
+        assertEquals("123456", saved.memberId());
         assertEquals("CONFIRMED", saved.memberCheck());
         assertEquals("active", saved.memberStatus());
         assertEquals("Kano", saved.state());
         assertEquals("Dala", saved.lga());
         assertEquals("Gwale", saved.ward());
-        assertEquals("01/02/03/004", saved.puCode());
+        assertEquals("19/02/03/004", saved.puCode());
         assertEquals("PENDING", saved.status());
         assertNotNull(saved.createdAt());
         assertTrue(store.isEmpty(), "the session is cleared when the registration is finished");
     }
 
-    @Test void theIdIsSentToCbmExactlyAsTyped() {
+    @Test void theFullFormIdIsSentToCbmInCapitals() {
         flow.start(session);
-        send("1", "Aminu Bello", "cbm/2026/Ab-77");
-        assertEquals(Arrays.asList("cbm/2026/Ab-77"), db.checked);
+        send("1", "Aminu Bello", "cbm-2026-ng-123456");
+        assertEquals(Arrays.asList("CBM-2026-NG-123456"), db.checked);
     }
 
     @Test void answersWithExtraSpacesAreCleaned() {
         flow.start(session);
-        send("1", "  Aminu    Bello ", "CBM-12345", "  Akwa   Ibom ", " Ikot  Ekpene", "  Ward 5 ", "01 02 03 004", "1");
+        send("1", "  Aminu    Bello ", "123456", "  Akwa   Ibom ", " Ikot  Ekpene", "  Ward 5 ", "03 02 03 004", "1");
         Supervisor saved = db.rows.get(0);
         assertEquals("Aminu Bello", saved.fullName());
         assertEquals("Akwa Ibom", saved.state());
         assertEquals("Ikot Ekpene", saved.lga());
         assertEquals("Ward 5", saved.ward());
-        assertEquals("01/02/03/004", saved.puCode());
+        assertEquals("03/02/03/004", saved.puCode());
     }
 
     @Test void anIdCbmCannotConfirmOffersReEnterOrContinue() {
         db.idKnown = false;
         flow.start(session);
-        String reply = send("1", "Aminu Bello", "CBM-99999");
+        String reply = send("1", "Aminu Bello", "999999");
         assertTrue(reply.contains("We could not confirm that ID right now."));
         assertTrue(reply.contains("1. Re-enter ID"));
         assertTrue(reply.contains("2. Continue, CBM will check it"));
@@ -227,33 +227,33 @@ class CbmElectionFlowTest {
         reply = send("1");   // type the ID again
         assertTrue(reply.contains("Enter your City Boy Registration ID:"));
         db.idKnown = true;
-        reply = send("CBM-12345");
+        reply = send("123456");
         assertTrue(reply.contains("Enter your state of voting"));
-        send("Kano", "Dala", "Gwale", "010203004", "1");
+        send("Kano", "Dala", "Gwale", "190203004", "1");
         assertEquals("CONFIRMED", db.rows.get(0).memberCheck());
-        assertEquals("CBM-12345", db.rows.get(0).memberId());
+        assertEquals("123456", db.rows.get(0).memberId());
     }
 
     @Test void continuingWithoutAConfirmedIdIsRecordedAsNotConfirmed() {
         db.idKnown = false;
         flow.start(session);
-        send("1", "Aminu Bello", "CBM-99999");
+        send("1", "Aminu Bello", "999999");
         String reply = send("2");
         assertTrue(reply.contains("Enter your state of voting"));
-        send("Kano", "Dala", "Gwale", "010203004");
+        send("Kano", "Dala", "Gwale", "190203004");
         String done = send("1");
         assertTrue(done.startsWith("END Registration received."));
         Supervisor saved = db.rows.get(0);
         assertEquals("NOT_CONFIRMED", saved.memberCheck());
         assertNull(saved.memberStatus());
-        assertEquals("CBM-99999", saved.memberId());
+        assertEquals("999999", saved.memberId());
         assertEquals("PENDING", saved.status());
     }
 
     @Test void aCbmLookupThatBlowsUpIsTreatedAsNotConfirmed() {
         db.checkThrows = true;
         flow.start(session);
-        String reply = send("1", "Aminu Bello", "CBM-12345");
+        String reply = send("1", "Aminu Bello", "123456");
         assertTrue(reply.contains("We could not confirm that ID right now."));
         assertTrue(send("5").contains("Invalid choice."));
         assertTrue(send("2").contains("Enter your state of voting"));
@@ -262,7 +262,7 @@ class CbmElectionFlowTest {
     @Test void zeroOnTheIdDecisionScreenGoesBackToTheName() {
         db.idKnown = false;
         flow.start(session);
-        send("1", "Aminu Bello", "CBM-99999");
+        send("1", "Aminu Bello", "999999");
         assertTrue(send("0").contains("Enter your full name:"));
     }
 
@@ -282,10 +282,10 @@ class CbmElectionFlowTest {
         flow.start(session);
         assertTrue(send("1", "1234").contains("Please enter a valid name."));
         assertTrue(send("Aminu Bello").contains("Enter your City Boy Registration ID:"));
-        assertTrue(send("AB&C=1").contains("Invalid ID. Check it and try again."));
+        assertTrue(send("AB&C=1").contains("Invalid ID. Enter it as 123456 or CBM-2026-NG-123456."));
         assertTrue(send("ab").contains("Invalid ID."));                 // too short
         assertTrue(send("a b c d").contains("Invalid ID."));            // spaces are not part of an ID
-        assertTrue(send("CBM-12345").contains("Enter your state of voting"));
+        assertTrue(send("123456").contains("Enter your state of voting"));
         assertTrue(send("Atlantis").contains("State not recognised."));
         assertTrue(send("Kano").contains("Enter your LGA:"));
         assertTrue(send("12345").contains("Please enter a valid LGA."));
@@ -299,17 +299,76 @@ class CbmElectionFlowTest {
         assertEquals(0, db.rows.size());
     }
 
+    @Test void onlyRealLookingIdsAreAccepted() {
+        flow.start(session);
+        send("1", "Aminu Bello");
+        for (String bad : new String[] {"2222", "222", "12345678", "1234557890", "Jigawa", "LOG", "CBM-SUP-10784",
+                "GBM-2026-NG-123318", "CBM-2026-NG-12", "CBM-12345"}) {
+            assertTrue(send(bad).contains("Invalid ID. Enter it as 123456 or CBM-2026-NG-123456."), bad);
+        }
+        assertTrue(db.checked.isEmpty(), "a bad ID is never sent to CBM");
+        assertTrue(send("123456").contains("Enter your state of voting"));
+        send("0");   // back to the ID question
+        assertTrue(send("1234567").contains("Enter your state of voting"));
+        assertEquals(Arrays.asList("123456", "1234567"), db.checked);
+    }
+
+    @Test void theExampleCodeIsNeverAccepted() {
+        flow.start(session);
+        send("1", "Aminu Bello", "123456", "Abia", "Umuahia North", "Ward 1");   // 01 is Abia's own number
+        for (String example : new String[] {"010203004", "01/02/03/004", "01 02 03 004"}) {
+            assertTrue(send(example).contains("That is only an example."), example);
+        }
+        assertTrue(send("010203005").contains("Confirm details:"));
+    }
+
+    @Test void thePollingUnitCodeMustStartWithTheNumberOfTheChosenState() {
+        flow.start(session);
+        send("1", "Aminu Bello", "123456", "Kano", "Dala", "Gwale");
+        String reply = send("240101001");   // 24 is Lagos
+        assertTrue(reply.contains("Kano codes start with 19."), reply);
+        assertTrue(reply.contains("Enter your Polling Unit Code"));
+        assertEquals(0, db.rows.size());
+        assertTrue(send("19 01 01 001").contains("Confirm details:"));
+        assertTrue(send("1").startsWith("END Registration received."));
+        assertEquals("19/01/01/001", db.rows.get(0).puCode());
+    }
+
+    @Test void goingBackToChangeTheStateChecksTheCodeAgain() {
+        flow.start(session);
+        send("1", "Aminu Bello", "123456", "Kano", "Dala", "Gwale");
+        send("0", "0", "0");   // back to the state question
+        send("Lagos", "Ikeja", "Alausa");
+        assertTrue(send("190101001").contains("Lagos codes start with 24."));
+        assertTrue(send("240101001").contains("Confirm details:"));
+    }
+
+    @Test void everyStateHasItsInecNumber() {
+        assertEquals(1, CbmElectionFlow.stateNumber("Abia"));
+        assertEquals(7, CbmElectionFlow.stateNumber("Benue"));
+        assertEquals(17, CbmElectionFlow.stateNumber("Jigawa"));
+        assertEquals(19, CbmElectionFlow.stateNumber("Kano"));
+        assertEquals(20, CbmElectionFlow.stateNumber("Katsina"));
+        assertEquals(23, CbmElectionFlow.stateNumber("Kwara"));
+        assertEquals(24, CbmElectionFlow.stateNumber("Lagos"));
+        assertEquals(31, CbmElectionFlow.stateNumber("Plateau"));
+        assertEquals(34, CbmElectionFlow.stateNumber("Taraba"));
+        assertEquals(36, CbmElectionFlow.stateNumber("Zamfara"));
+        assertEquals(37, CbmElectionFlow.stateNumber("FCT Abuja"));
+        assertEquals(-1, CbmElectionFlow.stateNumber("Atlantis"));
+    }
+
     @Test void statesAreRecognisedInTheWaysPeopleTypeThem() {
         for (String typed : new String[] {"FCT", "abuja", "Federal Capital Territory", "FCT Abuja"}) {
             store.clear();
             flow.start(session);
-            send("1", "Aminu Bello", "CBM-12345", typed, "Garki", "Ward 1", "150101001", "1");
+            send("1", "Aminu Bello", "123456", typed, "Garki", "Ward 1", "370101001", "1");
             assertEquals("FCT Abuja", db.rows.get(db.rows.size() - 1).state(), typed);
             db.rows.clear();
         }
         store.clear();
         flow.start(session);
-        send("1", "Aminu Bello", "CBM-12345", "Nassarawa State", "Keffi", "Ward 1", "260101001", "1");
+        send("1", "Aminu Bello", "123456", "Nassarawa State", "Keffi", "Ward 1", "250101001", "1");
         assertEquals("Nasarawa", db.rows.get(0).state());
     }
 
@@ -329,7 +388,7 @@ class CbmElectionFlowTest {
 
     @Test void zeroGoesBackOneQuestionAndFromTheFirstQuestionToTheMenu() {
         flow.start(session);
-        send("1", "Aminu Bello", "CBM-12345", "Kano");
+        send("1", "Aminu Bello", "123456", "Kano");
         assertTrue(send("0").contains("Enter your state of voting"));      // from the LGA question
         assertTrue(send("0").contains("Enter your City Boy Registration ID:"));
         assertTrue(send("0").contains("Enter your full name:"));
@@ -340,9 +399,9 @@ class CbmElectionFlowTest {
     @Test void backOnTheConfirmScreenReturnsToThePollingUnitQuestionAndKeepsTheEarlierAnswers() {
         registerUpToConfirm();
         assertTrue(send("0").contains("Enter your Polling Unit Code"));
-        String confirm = send("020304005");
+        String confirm = send("190304005");
         assertTrue(confirm.contains("Aminu Bello"));
-        assertTrue(confirm.contains("PU: 02/03/04/005"));
+        assertTrue(confirm.contains("PU: 19/03/04/005"));
     }
 
     @Test void reEnterOnTheConfirmScreenStartsAgainFromTheName() {
@@ -350,10 +409,10 @@ class CbmElectionFlowTest {
         assertTrue(send("2").contains("Enter your full name:"));
         assertNull(store.get("cbmEsA0"));
         assertNull(store.get("cbmEsA5"));
-        send("Musa Danjuma", "CBM-77777", "Lagos", "Ikeja", "Alausa", "250101001");
+        send("Musa Danjuma", "777777", "Lagos", "Ikeja", "Alausa", "240101001");
         send("1");
         assertEquals("Musa Danjuma", db.rows.get(0).fullName());
-        assertEquals("25/01/01/001", db.rows.get(0).puCode());
+        assertEquals("24/01/01/001", db.rows.get(0).puCode());
     }
 
     @Test void anInvalidChoiceOnTheConfirmScreenStaysOnIt() {
@@ -361,7 +420,7 @@ class CbmElectionFlowTest {
         String reply = send("7");
         assertTrue(reply.startsWith("CON Invalid choice."));
         assertTrue(reply.contains("1. Confirm"));
-        assertTrue(reply.contains("PU: 01/02/03/004"));
+        assertTrue(reply.contains("PU: 19/02/03/004"));
         assertEquals(0, db.rows.size());
         assertTrue(send("1").startsWith("END Registration received."));
     }
@@ -398,7 +457,7 @@ class CbmElectionFlowTest {
     @Test void everyScreenOnTheLongestPathFitsTheUssdLimit() {
         db.offset = 9000;   // five-digit id, so the longest possible reference: CBM-SV10001
         String name = "Abcdefghij Abcdefghij Abcdefghij Abcdefghij Abcdefghij";    // 54 characters
-        String id = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123";                               // 30 characters
+        String id = "CBM-2026-NG-1234567";                                         // the longest ID accepted
         String lga = "Abcdefghi Abcdefghi Abcdefghi Abcdefghi";                     // 39 characters
         String ward = "Abcdefghi Abcdefghi Abcdefghi Abcdefghi";                    // 39 characters
         List<String> screens = new ArrayList<>();
@@ -417,7 +476,9 @@ class CbmElectionFlowTest {
         screens.add(send(lga));
         screens.add(send(ward));
         screens.add(send("123"));                                 // polling unit prompt plus its longest notice
-        screens.add(send("010203004"));                           // confirm screen with the longest answers
+        screens.add(send("010203004"));                           // the example code, with its notice
+        screens.add(send("190203004"));                           // another state's number, with its notice
+        screens.add(send("090203004"));                           // confirm screen with the longest answers
         screens.add(send("7"));                                   // ... and with the invalid-choice notice
         screens.add(send("1"));                                   // done
         for (String screen : screens) {
@@ -435,11 +496,11 @@ class CbmElectionFlowTest {
         Set<String> allowed = new HashSet<>(Arrays.asList(CbmElectionFlow.SESSION_KEYS));
         db.idKnown = false;
         flow.start(session);
-        send("1", "Aminu Bello", "CBM-12345", "2", "Kano", "Dala", "Gwale");
+        send("1", "Aminu Bello", "123456", "2", "Kano", "Dala", "Gwale");
         assertFalse(store.isEmpty());
         for (String key : store.keySet()) assertTrue(allowed.contains(key), "undocumented session key: " + key);
         assertTrue(store.containsKey("cbmEsA5") == false);   // the last answer is not typed yet
-        send("010203004");
+        send("190203004");
         for (String key : store.keySet()) assertTrue(allowed.contains(key), "undocumented session key: " + key);
         assertTrue(store.containsKey("cbmEsA5"));
         flow.clear(session);

@@ -19,6 +19,11 @@ public class CbmSupportGroupRegistration {
     private String referral;
     private LocalDateTime createdAt;
 
+    // Where the application came from. Only the USSD flow sets these, so a row without a source was not saved by it.
+    private String source;      // "USSD"
+    private String telco;       // the network, as HML reported it (MTN, GLO ...)
+    private String sessionId;   // HML's session id for the call (column session_id)
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getPhoneNumber() { return phoneNumber; }
@@ -35,4 +40,11 @@ public class CbmSupportGroupRegistration {
     public void setReferral(String referral) { this.referral = referral; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
+    public String getTelco() { return telco; }
+    public void setTelco(String telco) { this.telco = telco; }
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
 }

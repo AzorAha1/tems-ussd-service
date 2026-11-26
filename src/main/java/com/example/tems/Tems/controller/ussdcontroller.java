@@ -258,7 +258,7 @@ public class ussdcontroller {
             "cacRegFlow", "cacRegType", "cacRegField",
             "cacRegName", "cacRegBusinessName", "cacRegRcNumber",
             "cacRegEmail", "cacRegState", "cacRegOccupation",
-            "cacRegNin", "cacRegDob", "cacRegGender", "cacRegLga", "cacRegAddress","ussdSessionId", "ussdRoute",
+            "cacRegNin", "cacRegDob", "cacRegGender", "cacRegLga", "cacRegAddress","ussdSessionId", "ussdRoute", "ussdTelco",
             "ussdPublicRoute", "ussdTransportPrefix", "ussdCanonicalRoute",
             "cacVerifyType", "cacARField", "cacARRcNumber", "cacRequestType",
             "tmfFlow", "tmfField", "tmfPhone", "tmfVerified",
@@ -484,6 +484,7 @@ public class ussdcontroller {
                 }
             }
             saveToSession(phone, "ussdSessionId", sessionId.isEmpty() ? null : sessionId);
+            saveToSession(phone, "ussdTelco", inbound.telco().isEmpty() ? null : inbound.telco().toUpperCase(java.util.Locale.ROOT));
             saveToSession(phone, "ussdRoute", allowed ? route.name() : Route.TEMS.name());
             saveToSession(phone, "ussdPublicRoute", resolution.path().publicRoute());
             saveToSession(phone, "ussdTransportPrefix", resolution.path().transportPrefix());
@@ -813,6 +814,12 @@ public class ussdcontroller {
             reg.setSpread((String) retrieveFromSession(phone, "cbmSupportSpread"));
             reg.setReferral((String) retrieveFromSession(phone, "cbmSupportReferral"));
             reg.setCreatedAt(LocalDateTime.now());
+            // Proof of origin: only this USSD flow saves these rows, and it always stamps them.
+            reg.setSource("USSD");
+            Object ussdTelco = retrieveFromSession(phone, "ussdTelco");
+            reg.setTelco(ussdTelco == null ? null : String.valueOf(ussdTelco));
+            Object ussdSession = retrieveFromSession(phone, "ussdSessionId");
+            reg.setSessionId(ussdSession == null ? null : String.valueOf(ussdSession));
 
             CbmSupportGroupRegistration saved = cbmSupportGroupRegistrationRepository.save(reg);
             // The reference is built from the row's own database id, so two applications can never get the same one
@@ -820,6 +827,8 @@ public class ussdcontroller {
             // older random references had four, so the old and new kinds never clash either.
             saved.setReferenceId("CBM-SUP-" + (10000 + saved.getId()));
             cbmSupportGroupRegistrationRepository.save(saved);
+            USSD_LOG.info("cbm_support_group_saved reference={} source=USSD telco={} sessionPresent={}",
+                saved.getReferenceId(), saved.getTelco() == null ? "unknown" : saved.getTelco(), saved.getSessionId() != null);
             clearCBMSupportRegSession(phone);
 
             return "END We will review your application\nand connect you with the national\ncoordination team.\n\nRef: " + saved.getReferenceId();
